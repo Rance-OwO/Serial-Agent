@@ -78,3 +78,36 @@ export interface ISerialManager {
 export interface ILogger {
   appendLine(value: string): void;
 }
+
+/** Keil 配置检查项 */
+export interface KeilConfigCheckItem {
+  key: string;
+  ok: boolean;
+  message: string;
+  value?: string;
+}
+
+/** Keil 配置检查结果 */
+export interface KeilConfigCheckResult {
+  ready: boolean;
+  checks: KeilConfigCheckItem[];
+  projectFile?: string;
+  target?: string;
+}
+
+/** Keil/JLink 执行结果（build/flash/buildAndFlash） */
+export interface KeilTaskResult {
+  success: boolean;
+  projectFile: string;
+  artifactPath?: string;
+  target?: string;
+}
+
+/** BridgeServer 调用的 Keil API 抽象 */
+export interface IKeilApi {
+  isBusy(): boolean;
+  checkConfig(): Promise<KeilConfigCheckResult>;
+  build(): Promise<KeilTaskResult>;
+  flash(artifactPath?: string): Promise<KeilTaskResult>;
+  buildAndFlash(): Promise<KeilTaskResult>;
+}

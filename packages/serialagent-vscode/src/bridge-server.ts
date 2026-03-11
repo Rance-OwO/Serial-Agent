@@ -17,7 +17,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { ISerialManager, ILogger, SerialConfig } from './types';
+import { ISerialManager, ILogger, SerialConfig, IKeilApi } from './types';
 
 export class BridgeServer {
   private _server: http.Server | null = null;
@@ -27,6 +27,7 @@ export class BridgeServer {
   private _serialManager: ISerialManager;
   private _logger: ILogger;
   private _onUiClear: (() => void) | null = null;
+  private _keilApi: IKeilApi | null = null;
 
   /** 进行中的 wait 请求取消函数列表（S2.05: 优雅关闭用） */
   private _activeWaiters: Set<() => void> = new Set();
@@ -44,6 +45,8 @@ export class BridgeServer {
 
   /** 设置 UI 同步回调：Bridge API 清空日志时通知 Webview */
   setOnUiClear(cb: () => void): void { this._onUiClear = cb; }
+  /** 设置 Keil API：供 Bridge 调用配置检测、编译、烧录 */
+  setKeilApi(api: IKeilApi): void { this._keilApi = api; }
 
   get port(): number { return this._port; }
   get token(): string { return this._token; }
@@ -130,9 +133,12 @@ export class BridgeServer {
   private _checkAuth(req: http.IncomingMessage, res: http.ServerResponse): boolean {
     if (!this._authEnabled) { return true; }
     const auth = req.headers.authorization;
-    if (!auth || auth !== `Bearer ${this._token}`) {
-      res.writeHead(401, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Unauthorized' }));
+    if (!auth) {
+      this._jsonError(res, 401, 'AUTH_REQUIRED', 'Missing Authorization header');
+      return false;
+    }
+    if (auth !== `Bearer ${this._token}`) {
+      this._jsonError(res, 401, 'AUTH_INVALID_TOKEN', 'Invalid bearer token');
       return false;
     }
     return true;
@@ -168,11 +174,33 @@ export class BridgeServer {
       else if (method === 'GET'  && pathname === '/api/log/wait')   { await this._handleLogWait(res, url); }
       else if (method === 'POST' && pathname === '/api/send-and-wait') { await this._handleSendAndWait(req, res); }
       else if (method === 'POST' && pathname === '/api/clear')      { await this._handleClear(res); }
-      else { this._json(res, 404, { error: `Not found: ${method} ${pathname}` }); }
+      else if (method === 'GET'  && pathname === '/api/keil/config-check') { await this._handleKeilConfigCheck(res); }
+      else if (method === 'POST' && pathname === '/api/keil/build') { await this._handleKeilBuild(res); }
+      else if (method === 'POST' && pathname === '/api/keil/flash') { await this._handleKeilFlash(req, res); }
+      else if (method === 'POST' && pathname === '/api/keil/build-and-flash') { await this._handleKeilBuildAndFlash(res); }
+      else if (method === 'POST' && pathname === '/api/keil/build-flash') { await this._handleKeilBuildAndFlash(res); } // alias
+      else {
+        this._jsonError(res, 404, 'NOT_FOUND', `Not found: ${method} ${pathname}`, {
+          method,
+          path: pathname,
+        });
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       this._logger.appendLine(`[Serial Agent Bridge] Error: ${method} ${pathname} -> ${msg}`);
-      this._json(res, 500, { error: msg });
+      if (msg === 'Invalid JSON body') {
+        this._jsonError(res, 400, 'INVALID_JSON_BODY', msg);
+        return;
+      }
+      if (msg === 'Request body too large') {
+        this._jsonError(res, 413, 'REQUEST_BODY_TOO_LARGE', msg, { maxBytes: BridgeServer.MAX_BODY_SIZE });
+        return;
+      }
+      const mapped = this._mapUnexpectedError(msg);
+      this._jsonError(res, mapped.status, mapped.code, msg, {
+        method,
+        path: pathname,
+      });
     }
   }
 
@@ -202,6 +230,66 @@ export class BridgeServer {
   private _json(res: http.ServerResponse, status: number, data: object): void {
     res.writeHead(status, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(data));
+  }
+
+  private _jsonError(
+    res: http.ServerResponse,
+    status: number,
+    code: string,
+    message: string,
+    details?: Record<string, unknown>,
+  ): void {
+    const payload: Record<string, unknown> = {
+      success: false,
+      error: {
+        code,
+        message,
+      },
+    };
+    if (details) {
+      payload.error = {
+        code,
+        message,
+        details,
+      };
+    }
+    this._json(res, status, payload);
+  }
+
+  private _mapKeilError(err: unknown, fallbackCode: string): { status: number; code: string; message: string } {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes('KEIL_TASK_BUSY')) {
+      return { status: 409, code: 'KEIL_TASK_BUSY', message: 'Another Keil build/flash task is currently running' };
+    }
+    if (msg.toLowerCase().includes('cannot find') || msg.toLowerCase().includes('missing')) {
+      return { status: 400, code: 'KEIL_CONFIG_INVALID', message: msg };
+    }
+    return { status: 500, code: fallbackCode, message: msg };
+  }
+
+  private _mapUnexpectedError(message: string): { status: number; code: string } {
+    const text = message.toLowerCase();
+    if (text.includes('timeout') || text.includes('timed out')) {
+      return { status: 504, code: 'NETWORK_TIMEOUT' };
+    }
+    if (
+      text.includes('serial') ||
+      text.includes('port') ||
+      text.includes('connect') ||
+      text.includes('disconnect') ||
+      text.includes('send')
+    ) {
+      return { status: 500, code: 'SERIAL_EXCEPTION' };
+    }
+    return { status: 500, code: 'INTERNAL_SERVER_ERROR' };
+  }
+
+  private _ensureKeilApi(res: http.ServerResponse): IKeilApi | null {
+    if (!this._keilApi) {
+      this._jsonError(res, 501, 'KEIL_API_UNAVAILABLE', 'Keil API is not initialized in extension');
+      return null;
+    }
+    return this._keilApi;
   }
 
   // ---- API Handlers (S1.03 ~ S1.09) ----
@@ -243,15 +331,44 @@ export class BridgeServer {
   private async _handleConnect(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const body = await this._readBody(req);
     if (!body.port || typeof body.port !== 'string') {
-      this._json(res, 400, { success: false, error: 'Missing required field: port' });
+      this._jsonError(res, 400, 'MISSING_REQUIRED_FIELD', 'Missing required field: port', { field: 'port' });
       return;
     }
+    const baudRateRaw = body.baudRate;
+    if (
+      baudRateRaw !== undefined &&
+      (typeof baudRateRaw !== 'number' || !Number.isFinite(baudRateRaw) || !Number.isInteger(baudRateRaw) || baudRateRaw <= 0)
+    ) {
+      this._jsonError(res, 400, 'INVALID_ARGUMENT', 'Invalid baudRate: must be a positive integer', { field: 'baudRate' });
+      return;
+    }
+    const dataBitsRaw = body.dataBits;
+    if (dataBitsRaw !== undefined && dataBitsRaw !== 5 && dataBitsRaw !== 6 && dataBitsRaw !== 7 && dataBitsRaw !== 8) {
+      this._jsonError(res, 400, 'INVALID_ARGUMENT', 'Invalid dataBits: must be one of 5,6,7,8', { field: 'dataBits' });
+      return;
+    }
+    const parityRaw = body.parity;
+    if (parityRaw !== undefined && parityRaw !== 'none' && parityRaw !== 'even' && parityRaw !== 'odd' && parityRaw !== 'mark' && parityRaw !== 'space') {
+      this._jsonError(res, 400, 'INVALID_ARGUMENT', 'Invalid parity: must be one of none/even/odd/mark/space', { field: 'parity' });
+      return;
+    }
+    const stopBitsRaw = body.stopBits;
+    if (stopBitsRaw !== undefined && stopBitsRaw !== 1 && stopBitsRaw !== 1.5 && stopBitsRaw !== 2) {
+      this._jsonError(res, 400, 'INVALID_ARGUMENT', 'Invalid stopBits: must be one of 1/1.5/2', { field: 'stopBits' });
+      return;
+    }
+
+    const baudRate = typeof baudRateRaw === 'number' ? baudRateRaw : 115200;
+    const dataBits: 5 | 6 | 7 | 8 = dataBitsRaw === 5 || dataBitsRaw === 6 || dataBitsRaw === 7 || dataBitsRaw === 8 ? dataBitsRaw : 8;
+    const parity: SerialConfig['parity'] = parityRaw === 'none' || parityRaw === 'even' || parityRaw === 'odd' || parityRaw === 'mark' || parityRaw === 'space' ? parityRaw : 'none';
+    const stopBits: 1 | 1.5 | 2 = stopBitsRaw === 1 || stopBitsRaw === 1.5 || stopBitsRaw === 2 ? stopBitsRaw : 1;
+
     const config: SerialConfig = {
       port: body.port,
-      baudRate: (body.baudRate as number) ?? 115200,
-      dataBits: (body.dataBits as 5 | 6 | 7 | 8) ?? 8,
-      parity: (body.parity as SerialConfig['parity']) ?? 'none',
-      stopBits: (body.stopBits as 1 | 1.5 | 2) ?? 1,
+      baudRate,
+      dataBits,
+      parity,
+      stopBits,
       // 保留当前显示设置
       lineEnding: this._serialManager.config.lineEnding,
       showTimestamp: this._serialManager.config.showTimestamp,
@@ -261,7 +378,7 @@ export class BridgeServer {
     if (ok) {
       this._json(res, 200, { success: true, message: `Connected to ${config.port} @ ${config.baudRate}` });
     } else {
-      this._json(res, 400, { success: false, error: `Failed to connect to ${config.port}` });
+      this._jsonError(res, 400, 'SERIAL_CONNECT_FAILED', `Failed to connect to ${config.port}`, { port: config.port });
     }
   }
 
@@ -286,11 +403,11 @@ export class BridgeServer {
   private async _handleSend(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const body = await this._readBody(req);
     if (body.data === undefined || body.data === null) {
-      this._json(res, 400, { success: false, error: 'Missing required field: data' });
+      this._jsonError(res, 400, 'MISSING_REQUIRED_FIELD', 'Missing required field: data', { field: 'data' });
       return;
     }
     if (!this._serialManager.isConnected) {
-      this._json(res, 400, { success: false, error: 'Not connected to any serial port' });
+      this._jsonError(res, 400, 'SERIAL_NOT_CONNECTED', 'Not connected to any serial port');
       return;
     }
     const data = String(body.data);
@@ -300,7 +417,7 @@ export class BridgeServer {
     if (result.ok) {
       this._json(res, 200, { success: true, bytesSent: result.bytesSent });
     } else {
-      this._json(res, 400, { success: false, error: 'Send failed (check HEX format or connection)' });
+      this._jsonError(res, 400, 'SERIAL_SEND_FAILED', 'Send failed (check HEX format or connection)');
     }
   }
 
@@ -320,7 +437,7 @@ export class BridgeServer {
   private async _handleLogWait(res: http.ServerResponse, url: URL): Promise<void> {
     const pattern = url.searchParams.get('pattern');
     if (!pattern) {
-      this._json(res, 400, { error: 'Missing required parameter: pattern' });
+      this._jsonError(res, 400, 'MISSING_REQUIRED_PARAMETER', 'Missing required parameter: pattern', { parameter: 'pattern' });
       return;
     }
 
@@ -365,15 +482,15 @@ export class BridgeServer {
     const body = await this._readBody(req);
 
     if (body.data === undefined || body.data === null) {
-      this._json(res, 400, { success: false, error: 'Missing required field: data' });
+      this._jsonError(res, 400, 'MISSING_REQUIRED_FIELD', 'Missing required field: data', { field: 'data' });
       return;
     }
     if (!body.pattern || typeof body.pattern !== 'string') {
-      this._json(res, 400, { success: false, error: 'Missing required field: pattern' });
+      this._jsonError(res, 400, 'MISSING_REQUIRED_FIELD', 'Missing required field: pattern', { field: 'pattern' });
       return;
     }
     if (!this._serialManager.isConnected) {
-      this._json(res, 400, { success: false, error: 'Not connected to any serial port' });
+      this._jsonError(res, 400, 'SERIAL_NOT_CONNECTED', 'Not connected to any serial port');
       return;
     }
 
@@ -401,7 +518,9 @@ export class BridgeServer {
     this._serialManager.offNewLog(onLineCollector);
 
     if (!sendResult.ok) {
-      this._json(res, 400, { sendSuccess: false, error: 'Send failed (check HEX format or connection)' });
+      this._jsonError(res, 400, 'SERIAL_SEND_FAILED', 'Send failed (check HEX format or connection)', {
+        sendSuccess: false,
+      });
       return;
     }
 
@@ -529,5 +648,107 @@ export class BridgeServer {
     this._serialManager.resetCounters();
     this._onUiClear?.();
     this._json(res, 200, { success: true });
+  }
+
+  private async _handleKeilConfigCheck(res: http.ServerResponse): Promise<void> {
+    const keilApi = this._ensureKeilApi(res);
+    if (!keilApi) { return; }
+
+    try {
+      const report = await keilApi.checkConfig();
+      this._json(res, 200, {
+        success: true,
+        data: {
+          configOk: report.ready,
+          checks: report.checks,
+          projectFile: report.projectFile,
+          target: report.target,
+        },
+      });
+    } catch (err: unknown) {
+      const mapped = this._mapKeilError(err, 'KEIL_CONFIG_CHECK_FAILED');
+      this._jsonError(res, mapped.status, mapped.code, mapped.message, { stage: 'config-check' });
+    }
+  }
+
+  private async _handleKeilBuild(res: http.ServerResponse): Promise<void> {
+    const keilApi = this._ensureKeilApi(res);
+    if (!keilApi) { return; }
+    if (keilApi.isBusy()) {
+      this._jsonError(res, 409, 'KEIL_TASK_BUSY', 'Another Keil build/flash task is currently running', { stage: 'build' });
+      return;
+    }
+
+    try {
+      const result = await keilApi.build();
+      this._json(res, 200, {
+        success: true,
+        data: {
+          stage: 'build',
+          buildOk: result.success,
+          artifactPath: result.artifactPath,
+          projectFile: result.projectFile,
+          target: result.target,
+        },
+      });
+    } catch (err: unknown) {
+      const mapped = this._mapKeilError(err, 'KEIL_BUILD_FAILED');
+      this._jsonError(res, mapped.status, mapped.code, mapped.message, { stage: 'build' });
+    }
+  }
+
+  private async _handleKeilFlash(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    const keilApi = this._ensureKeilApi(res);
+    if (!keilApi) { return; }
+    if (keilApi.isBusy()) {
+      this._jsonError(res, 409, 'KEIL_TASK_BUSY', 'Another Keil build/flash task is currently running', { stage: 'flash' });
+      return;
+    }
+
+    try {
+      const body = await this._readBody(req);
+      const artifactPath = typeof body.artifactPath === 'string' ? body.artifactPath : undefined;
+      const result = await keilApi.flash(artifactPath);
+      this._json(res, 200, {
+        success: true,
+        data: {
+          stage: 'flash',
+          flashOk: result.success,
+          artifactPath: result.artifactPath,
+          projectFile: result.projectFile,
+          target: result.target,
+        },
+      });
+    } catch (err: unknown) {
+      const mapped = this._mapKeilError(err, 'KEIL_FLASH_FAILED');
+      this._jsonError(res, mapped.status, mapped.code, mapped.message, { stage: 'flash' });
+    }
+  }
+
+  private async _handleKeilBuildAndFlash(res: http.ServerResponse): Promise<void> {
+    const keilApi = this._ensureKeilApi(res);
+    if (!keilApi) { return; }
+    if (keilApi.isBusy()) {
+      this._jsonError(res, 409, 'KEIL_TASK_BUSY', 'Another Keil build/flash task is currently running', { stage: 'build-and-flash' });
+      return;
+    }
+
+    try {
+      const result = await keilApi.buildAndFlash();
+      this._json(res, 200, {
+        success: true,
+        data: {
+          stage: 'build-and-flash',
+          buildOk: true,
+          flashOk: true,
+          artifactPath: result.artifactPath,
+          projectFile: result.projectFile,
+          target: result.target,
+        },
+      });
+    } catch (err: unknown) {
+      const mapped = this._mapKeilError(err, 'KEIL_BUILD_FLASH_FAILED');
+      this._jsonError(res, mapped.status, mapped.code, mapped.message, { stage: 'build-and-flash' });
+    }
   }
 }

@@ -466,32 +466,50 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(bridgeOutputChannel);
   context.subscriptions.push(keilOutputChannel);
 
-  const runKeilTask = async (taskName: string, runner: () => Promise<void>): Promise<void> => {
+  // Webview Provider（传递完整 context 以支持 globalState 持久化）
+  const provider = new SerialPanelProvider(context);
+
+  const withKeilTaskLock = async <T>(
+    taskName: string,
+    runner: () => Promise<T>,
+    revealOutput: boolean,
+  ): Promise<T> => {
     if (keilTaskRunning) {
-      vscode.window.showWarningMessage('[Serial Agent] Build/Flash task is running, please wait...');
-      return;
+      throw new Error('KEIL_TASK_BUSY: Build/Flash task is running, please wait...');
     }
 
     keilTaskRunning = true;
     provider.postMessage({ type: 'keilBusy', busy: true, task: taskName });
-    keilOutputChannel.show(true);
+    if (revealOutput) { keilOutputChannel.show(true); }
     keilOutputChannel.appendLine(`[Serial Agent] ${taskName} started at ${new Date().toLocaleString()}`);
 
     try {
-      await runner();
+      const result = await runner();
       keilOutputChannel.appendLine(`[Serial Agent] ${taskName} finished successfully.`);
+      return result;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       keilOutputChannel.appendLine(`[Serial Agent] ${taskName} failed: ${msg}`);
-      vscode.window.showErrorMessage(`[Serial Agent] ${taskName} failed: ${msg}`);
+      throw err;
     } finally {
       keilTaskRunning = false;
       provider.postMessage({ type: 'keilBusy', busy: false, task: taskName });
     }
   };
 
-  // Webview Provider（传递完整 context 以支持 globalState 持久化）
-  const provider = new SerialPanelProvider(context);
+  const runKeilTaskUi = async (taskName: string, runner: () => Promise<void>): Promise<void> => {
+    try {
+      await withKeilTaskLock(taskName, runner, true);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('KEIL_TASK_BUSY')) {
+        vscode.window.showWarningMessage('[Serial Agent] Build/Flash task is running, please wait...');
+        return;
+      }
+      vscode.window.showErrorMessage(`[Serial Agent] ${taskName} failed: ${msg}`);
+    }
+  };
+
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(SerialPanelProvider.viewType, provider, {
       webviewOptions: { retainContextWhenHidden: true },
@@ -501,6 +519,13 @@ export function activate(context: vscode.ExtensionContext) {
   // Bridge Server 启动（S1.01）
   bridgeServer.setOnUiClear(() => {
     provider.postMessage({ type: 'clearLog' });
+  });
+  bridgeServer.setKeilApi({
+    isBusy: () => keilTaskRunning,
+    checkConfig: async () => keilToolchain.checkConfig(),
+    build: async () => withKeilTaskLock('Keil Build(API)', () => keilToolchain.build(), false),
+    flash: async (artifactPath?: string) => withKeilTaskLock('JLink Flash(API)', () => keilToolchain.flash(artifactPath), false),
+    buildAndFlash: async () => withKeilTaskLock('Build + Flash(API)', () => keilToolchain.buildAndFlash(), false),
   });
   bridgeServer.start().then(() => {
     bridgeRunning = true;
@@ -571,7 +596,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('serialagent.keil.build', async () => {
-      await runKeilTask('Keil Build', async () => {
+      await runKeilTaskUi('Keil Build', async () => {
         const result = await keilToolchain.build();
         vscode.window.showInformationMessage(`[Serial Agent] Build OK: ${result.artifactPath}`);
       });
@@ -580,7 +605,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('serialagent.keil.flash', async () => {
-      await runKeilTask('JLink Flash', async () => {
+      await runKeilTaskUi('JLink Flash', async () => {
         const result = await keilToolchain.flash();
         vscode.window.showInformationMessage(`[Serial Agent] Flash OK: ${result.artifactPath}`);
       });
@@ -589,7 +614,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('serialagent.keil.buildAndFlash', async () => {
-      await runKeilTask('Build + Flash', async () => {
+      await runKeilTaskUi('Build + Flash', async () => {
         const result = await keilToolchain.buildAndFlash();
         vscode.window.showInformationMessage(`[Serial Agent] Build+Flash OK: ${result.artifactPath}`);
       });

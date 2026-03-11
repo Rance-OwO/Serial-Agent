@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { spawn } from 'child_process';
+import { KeilConfigCheckResult, KeilTaskResult } from './types';
 
 type JLinkInterface = 'SWD' | 'JTAG';
 
@@ -23,12 +24,7 @@ interface JLinkDeviceCandidate {
   source: 'project' | 'jlink-db';
 }
 
-export interface BuildResult {
-  success: boolean;
-  projectFile: string;
-  target?: string;
-  artifactPath?: string;
-}
+export interface BuildResult extends KeilTaskResult {}
 
 interface BuildLogSummary {
   errorCount?: number;
@@ -226,6 +222,69 @@ export class KeilToolchainService {
     const buildResult = await this.build();
     const flashResult = await this.flash(buildResult.artifactPath);
     return { success: true, artifactPath: flashResult.artifactPath, projectFile: flashResult.projectFile };
+  }
+
+  async checkConfig(): Promise<KeilConfigCheckResult> {
+    const checks: KeilConfigCheckResult['checks'] = [];
+    let projectFile: string | undefined;
+    let target: string | undefined;
+    let projectMeta: ProjectMeta | undefined;
+
+    try {
+      projectFile = await this.resolveProjectFile();
+      checks.push({ key: 'keil.projectFile', ok: true, message: 'Project file found', value: projectFile });
+      projectMeta = this.parseUvprojx(projectFile);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      checks.push({ key: 'keil.projectFile', ok: false, message: msg });
+    }
+
+    if (projectMeta) {
+      try {
+        target = this.resolveTargetName(projectMeta);
+        checks.push({ key: 'keil.target', ok: true, message: 'Target resolved', value: target });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        checks.push({ key: 'keil.target', ok: false, message: msg });
+      }
+    } else {
+      checks.push({ key: 'keil.target', ok: false, message: 'Target check skipped because project file is unavailable' });
+    }
+
+    try {
+      const uv4 = this.resolveUv4Path();
+      checks.push({ key: 'keil.uv4Path', ok: true, message: 'UV4 executable found', value: uv4 });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      checks.push({ key: 'keil.uv4Path', ok: false, message: msg });
+    }
+
+    try {
+      const jlinkExe = this.resolveJLinkExePath();
+      checks.push({ key: 'jlink.installDirectory', ok: true, message: 'JLink executable found', value: jlinkExe });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      checks.push({ key: 'jlink.installDirectory', ok: false, message: msg });
+    }
+
+    if (projectMeta) {
+      try {
+        const jlinkDevice = this.resolveJLinkDevice(projectMeta, target);
+        checks.push({ key: 'jlink.device', ok: true, message: 'JLink device resolved', value: jlinkDevice });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        checks.push({ key: 'jlink.device', ok: false, message: msg });
+      }
+    } else {
+      checks.push({ key: 'jlink.device', ok: false, message: 'JLink device check skipped because project file is unavailable' });
+    }
+
+    return {
+      ready: checks.every(item => item.ok),
+      checks,
+      projectFile,
+      target,
+    };
   }
 
   private getConfigValue<T>(key: string, fallback: T): T {

@@ -12,7 +12,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import * as http from 'http';
 import { BridgeServer } from '../packages/serialagent-vscode/src/bridge-server';
 import { MockSerialManager } from './mocks/mock-serial-manager';
-import { ILogger } from '../packages/serialagent-vscode/src/types';
+import { ILogger, IKeilApi, KeilConfigCheckResult, KeilTaskResult } from '../packages/serialagent-vscode/src/types';
 
 // ---- 测试工具 ----
 
@@ -20,6 +20,47 @@ import { ILogger } from '../packages/serialagent-vscode/src/types';
 class SilentLogger implements ILogger {
   readonly lines: string[] = [];
   appendLine(value: string): void { this.lines.push(value); }
+}
+
+class FakeKeilApi implements IKeilApi {
+  busy = false;
+  checkConfigError: Error | null = null;
+  buildError: Error | null = null;
+  flashError: Error | null = null;
+  buildAndFlashError: Error | null = null;
+  configReport: KeilConfigCheckResult = {
+    ready: true,
+    checks: [{ key: 'uv4Path', ok: true, message: 'ok' }],
+    projectFile: 'D:/_KeilProject/demo.uvprojx',
+    target: 'Target 1',
+  };
+  buildResult: KeilTaskResult = {
+    success: true,
+    projectFile: 'D:/_KeilProject/demo.uvprojx',
+    artifactPath: 'D:/_KeilProject/Objects/demo.hex',
+    target: 'Target 1',
+  };
+
+  isBusy(): boolean { return this.busy; }
+  async checkConfig(): Promise<KeilConfigCheckResult> {
+    if (this.checkConfigError) { throw this.checkConfigError; }
+    return this.configReport;
+  }
+  async build(): Promise<KeilTaskResult> {
+    if (this.buildError) { throw this.buildError; }
+    return this.buildResult;
+  }
+  async flash(artifactPath?: string): Promise<KeilTaskResult> {
+    if (this.flashError) { throw this.flashError; }
+    if (artifactPath) {
+      return { ...this.buildResult, artifactPath };
+    }
+    return this.buildResult;
+  }
+  async buildAndFlash(): Promise<KeilTaskResult> {
+    if (this.buildAndFlashError) { throw this.buildAndFlashError; }
+    return this.buildResult;
+  }
 }
 
 /** 发送 HTTP 请求并返回解析后的响应 */
@@ -53,6 +94,43 @@ function httpRequest(
     );
     req.on('error', reject);
     if (body) { req.write(JSON.stringify(body)); }
+    req.end();
+  });
+}
+
+/** 发送原始 HTTP 请求（用于 OPTIONS/非法 JSON 等场景） */
+function rawHttpRequest(
+  port: number,
+  method: string,
+  path: string,
+  rawBody?: string,
+  headers?: Record<string, string>,
+): Promise<{ status: number; text: string; headers: http.IncomingHttpHeaders }> {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      {
+        hostname: '127.0.0.1',
+        port,
+        method,
+        path,
+        headers: {
+          ...headers,
+        },
+      },
+      (res) => {
+        let raw = '';
+        res.on('data', (chunk: string) => { raw += chunk; });
+        res.on('end', () => {
+          resolve({
+            status: res.statusCode ?? 0,
+            text: raw,
+            headers: res.headers,
+          });
+        });
+      },
+    );
+    req.on('error', reject);
+    if (rawBody !== undefined) { req.write(rawBody); }
     req.end();
   });
 }
@@ -94,7 +172,9 @@ describe('Bridge Server API', () => {
     it('T-B01: 无 Token 请求任意 API 应返回 401', async () => {
       const res = await httpRequest(port, 'GET', '/api/status');
       expect(res.status).toBe(401);
-      expect(res.data.error).toBe('Unauthorized');
+      expect(res.data.success).toBe(false);
+      expect(res.data.error.code).toBe('AUTH_REQUIRED');
+      expect(res.data.error.message).toContain('Authorization');
     });
 
     it('T-B02: 错误 Token 请求应返回 401', async () => {
@@ -102,7 +182,8 @@ describe('Bridge Server API', () => {
         'Authorization': 'Bearer wrong-token-12345',
       });
       expect(res.status).toBe(401);
-      expect(res.data.error).toBe('Unauthorized');
+      expect(res.data.success).toBe(false);
+      expect(res.data.error.code).toBe('AUTH_INVALID_TOKEN');
     });
 
     it('T-B02b: 正确 Token 请求应返回 200', async () => {
@@ -179,7 +260,26 @@ describe('Bridge Server API', () => {
     it('T-B06b: 缺少 port 字段应返回 400', async () => {
       const res = await authRequest('POST', '/api/connect', { baudRate: 115200 });
       expect(res.status).toBe(400);
-      expect(res.data.error).toContain('port');
+      expect(res.data.error.code).toBe('MISSING_REQUIRED_FIELD');
+      expect(res.data.error.message).toContain('port');
+    });
+
+    it('无效 baudRate 应返回 400', async () => {
+      mock.setMockPorts([{ path: 'COM3' }]);
+      const res = await authRequest('POST', '/api/connect', { port: 'COM3', baudRate: -9600 });
+      expect(res.status).toBe(400);
+      expect(res.data.success).toBe(false);
+      expect(res.data.error.code).toBe('INVALID_ARGUMENT');
+      expect(res.data.error.message).toContain('baudRate');
+    });
+
+    it('无效 parity 应返回 400', async () => {
+      mock.setMockPorts([{ path: 'COM3' }]);
+      const res = await authRequest('POST', '/api/connect', { port: 'COM3', parity: 'bad-parity' });
+      expect(res.status).toBe(400);
+      expect(res.data.success).toBe(false);
+      expect(res.data.error.code).toBe('INVALID_ARGUMENT');
+      expect(res.data.error.message).toContain('parity');
     });
 
     it('T-B07: 已连接时再连接应先断开旧连接', async () => {
@@ -252,7 +352,8 @@ describe('Bridge Server API', () => {
       const res = await authRequest('POST', '/api/send', { data: 'hello' });
       expect(res.status).toBe(400);
       expect(res.data.success).toBe(false);
-      expect(res.data.error).toContain('Not connected');
+      expect(res.data.error.code).toBe('SERIAL_NOT_CONNECTED');
+      expect(res.data.error.message).toContain('Not connected');
     });
 
     it('T-B12: HEX 格式错误应返回错误提示', async () => {
@@ -277,7 +378,8 @@ describe('Bridge Server API', () => {
       await mock.connect({ port: 'COM3', baudRate: 115200, dataBits: 8, parity: 'none', stopBits: 1, lineEnding: 'lf', showTimestamp: false, hexMode: false });
       const res = await authRequest('POST', '/api/send', {});
       expect(res.status).toBe(400);
-      expect(res.data.error).toContain('data');
+      expect(res.data.error.code).toBe('MISSING_REQUIRED_FIELD');
+      expect(res.data.error.message).toContain('data');
     });
   });
 
@@ -303,7 +405,8 @@ describe('Bridge Server API', () => {
     it('缺少 pattern 参数应返回 400', async () => {
       const res = await authRequest('GET', '/api/log/wait');
       expect(res.status).toBe(400);
-      expect(res.data.error).toContain('pattern');
+      expect(res.data.error.code).toBe('MISSING_REQUIRED_PARAMETER');
+      expect(res.data.error.message).toContain('pattern');
     });
 
     it('T-B13: pattern 匹配成功应立即返回 found: true', async () => {
@@ -365,19 +468,22 @@ describe('Bridge Server API', () => {
     it('缺少 data 字段应返回 400', async () => {
       const res = await authRequest('POST', '/api/send-and-wait', { pattern: 'OK' });
       expect(res.status).toBe(400);
-      expect(res.data.error).toContain('data');
+      expect(res.data.error.code).toBe('MISSING_REQUIRED_FIELD');
+      expect(res.data.error.message).toContain('data');
     });
 
     it('缺少 pattern 字段应返回 400', async () => {
       const res = await authRequest('POST', '/api/send-and-wait', { data: 'AT' });
       expect(res.status).toBe(400);
-      expect(res.data.error).toContain('pattern');
+      expect(res.data.error.code).toBe('MISSING_REQUIRED_FIELD');
+      expect(res.data.error.message).toContain('pattern');
     });
 
     it('未连接时应返回 400', async () => {
       const res = await authRequest('POST', '/api/send-and-wait', { data: 'AT', pattern: 'OK' });
       expect(res.status).toBe(400);
-      expect(res.data.error).toContain('Not connected');
+      expect(res.data.error.code).toBe('SERIAL_NOT_CONNECTED');
+      expect(res.data.error.message).toContain('Not connected');
     });
 
     it('原子性发送并匹配响应（自动响应模拟）', async () => {
@@ -426,7 +532,8 @@ describe('Bridge Server API', () => {
         hexMode: true,
       });
       expect(res.status).toBe(400);
-      expect(res.data.sendSuccess).toBe(false);
+      expect(res.data.success).toBe(false);
+      expect(res.data.error.code).toBe('SERIAL_SEND_FAILED');
     });
 
     it('Echo 注入到日志缓冲区', async () => {
@@ -444,6 +551,28 @@ describe('Bridge Server API', () => {
       const logRes = await authRequest('GET', '/api/log');
       expect(logRes.data.lines).toContain('MCP TX>> ver');
       expect(logRes.data.lines).toContain('Firmware v1.0.0');
+    });
+
+    it('并发 send-and-wait 请求应各自匹配到对应响应', async () => {
+      mock.setMockPorts([{ path: 'COM3' }]);
+      await mock.connect({ port: 'COM3', baudRate: 115200, dataBits: 8, parity: 'none', stopBits: 1, lineEnding: 'lf', showTimestamp: false, hexMode: false });
+      mock.setAutoResponse('CMD1', 'RSP1', 20);
+      mock.setAutoResponse('CMD2', 'RSP2', 10);
+
+      const [res1, res2] = await Promise.all([
+        authRequest('POST', '/api/send-and-wait', { data: 'CMD1', pattern: 'RSP1', timeout: 3 }),
+        authRequest('POST', '/api/send-and-wait', { data: 'CMD2', pattern: 'RSP2', timeout: 3 }),
+      ]);
+
+      expect(res1.status).toBe(200);
+      expect(res1.data.sendSuccess).toBe(true);
+      expect(res1.data.found).toBe(true);
+      expect(res1.data.matchedLine).toBe('RSP1');
+
+      expect(res2.status).toBe(200);
+      expect(res2.data.sendSuccess).toBe(true);
+      expect(res2.data.found).toBe(true);
+      expect(res2.data.matchedLine).toBe('RSP2');
     });
   });
 
@@ -484,7 +613,107 @@ describe('Bridge Server API', () => {
     it('不存在的路径应返回 404', async () => {
       const res = await authRequest('GET', '/api/nonexistent');
       expect(res.status).toBe(404);
-      expect(res.data.error).toContain('Not found');
+      expect(res.data.error.code).toBe('NOT_FOUND');
+      expect(res.data.error.message).toContain('Not found');
+    });
+  });
+
+  describe('协议与格式一致性', () => {
+    it('OPTIONS 预检请求应返回 204 和 CORS 头', async () => {
+      const res = await rawHttpRequest(port, 'OPTIONS', '/api/status');
+      expect(res.status).toBe(204);
+      expect(res.headers['access-control-allow-origin']).toBe('*');
+      expect(String(res.headers['access-control-allow-methods'])).toContain('GET');
+      expect(String(res.headers['access-control-allow-methods'])).toContain('POST');
+      expect(String(res.headers['access-control-allow-headers'])).toContain('Authorization');
+    });
+
+    it('非法 JSON body 应返回 400 且包含统一错误信息', async () => {
+      const res = await rawHttpRequest(
+        port,
+        'POST',
+        '/api/connect',
+        '{"port":"COM3"',
+        {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      );
+      expect(res.status).toBe(400);
+      const parsed = JSON.parse(res.text) as { success: boolean; error: { code: string; message: string } };
+      expect(parsed.success).toBe(false);
+      expect(parsed.error.code).toBe('INVALID_JSON_BODY');
+      expect(parsed.error.message).toContain('Invalid JSON body');
+    });
+  });
+
+  describe('Keil API 状态码与错误码', () => {
+    it('Keil API 未初始化应返回 501 + 统一错误格式', async () => {
+      const res = await authRequest('GET', '/api/keil/config-check');
+      expect(res.status).toBe(501);
+      expect(res.data.success).toBe(false);
+      expect(res.data.error.code).toBe('KEIL_API_UNAVAILABLE');
+      expect(res.data.error.message).toContain('not initialized');
+    });
+
+    it('Keil busy 场景应返回 409 + KEIL_TASK_BUSY', async () => {
+      const keilApi = new FakeKeilApi();
+      keilApi.busy = true;
+      bridge.setKeilApi(keilApi);
+
+      const res = await authRequest('POST', '/api/keil/build');
+      expect(res.status).toBe(409);
+      expect(res.data.success).toBe(false);
+      expect(res.data.error.code).toBe('KEIL_TASK_BUSY');
+      expect(res.data.error.details.stage).toBe('build');
+    });
+
+    it('Keil build 成功应返回 200 + success/data', async () => {
+      const keilApi = new FakeKeilApi();
+      bridge.setKeilApi(keilApi);
+
+      const res = await authRequest('POST', '/api/keil/build');
+      expect(res.status).toBe(200);
+      expect(res.data.success).toBe(true);
+      expect(res.data.data.stage).toBe('build');
+      expect(res.data.data.buildOk).toBe(true);
+      expect(res.data.data.artifactPath).toContain('.hex');
+    });
+
+    it('Keil config-check 配置缺失应返回 400 + KEIL_CONFIG_INVALID', async () => {
+      const keilApi = new FakeKeilApi();
+      keilApi.checkConfigError = new Error('Cannot find UV4 executable');
+      bridge.setKeilApi(keilApi);
+
+      const res = await authRequest('GET', '/api/keil/config-check');
+      expect(res.status).toBe(400);
+      expect(res.data.success).toBe(false);
+      expect(res.data.error.code).toBe('KEIL_CONFIG_INVALID');
+      expect(res.data.error.details.stage).toBe('config-check');
+    });
+
+    it('Keil flash 执行失败应返回 500 + KEIL_FLASH_FAILED', async () => {
+      const keilApi = new FakeKeilApi();
+      keilApi.flashError = new Error('JLink failed unexpectedly');
+      bridge.setKeilApi(keilApi);
+
+      const res = await authRequest('POST', '/api/keil/flash', { artifactPath: 'D:/tmp/demo.hex' });
+      expect(res.status).toBe(500);
+      expect(res.data.success).toBe(false);
+      expect(res.data.error.code).toBe('KEIL_FLASH_FAILED');
+      expect(res.data.error.details.stage).toBe('flash');
+    });
+
+    it('Keil build-and-flash 成功应返回 200 + buildOk/flashOk', async () => {
+      const keilApi = new FakeKeilApi();
+      bridge.setKeilApi(keilApi);
+
+      const res = await authRequest('POST', '/api/keil/build-and-flash');
+      expect(res.status).toBe(200);
+      expect(res.data.success).toBe(true);
+      expect(res.data.data.stage).toBe('build-and-flash');
+      expect(res.data.data.buildOk).toBe(true);
+      expect(res.data.data.flashOk).toBe(true);
     });
   });
 });

@@ -203,6 +203,10 @@ Bridge Server 提供 REST API 供 MCP Server 调用：
 | GET | `/api/log/wait` | 等待日志匹配 pattern |
 | POST | `/api/send-and-wait` | 原子发送+等待 |
 | POST | `/api/clear` | 清空日志 |
+| GET | `/api/keil/config-check` | 检查 Keil/JLink 配置是否可用 |
+| POST | `/api/keil/build` | 执行 Keil 编译并返回成功状态 |
+| POST | `/api/keil/flash` | 执行 JLink 烧录并返回成功状态 |
+| POST | `/api/keil/build-and-flash` | 一键编译+烧录并返回阶段状态 |
 
 **安全特性**：
 - 仅绑定 `127.0.0.1`（本地访问）
