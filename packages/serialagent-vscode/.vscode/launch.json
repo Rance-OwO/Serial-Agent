@@ -1,0 +1,17 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Serial Agent Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/packages/serialagent-vscode"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/packages/serialagent-vscode/dist/**/*.js"
+      ],
+      "preLaunchTask": "npm: build - packages/serialagent-vscode"
+    }
+  ]
+}

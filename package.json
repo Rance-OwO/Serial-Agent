@@ -1,0 +1,26 @@
+{
+  "name": "serialagent",
+  "version": "1.0.1",
+  "private": true,
+  "description": "AI-powered embedded serial debugging agent - MCP Server + VS Code Extension",
+  "workspaces": [
+    "packages/serialagent-mcp",
+    "packages/serialagent-vscode"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "clean": "npm run clean --workspaces --if-present",
+    "watch": "npm run watch --workspaces --if-present",
+    "bridge:build": "tsc -p tsconfig.bridge.json",
+    "bridge": "node dist-bridge/tests/test-bridge-real-hw.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@vitest/coverage-v8": "^4.0.18",
+    "vitest": "^4.0.18"
+  }
+}

@@ -1,0 +1,46 @@
+/* VS Code 主题适配样式 — 使用 VS Code CSS 变量自动适配亮/暗主题 */
+:root {
+  --container-padding: 12px;
+  --input-padding-vertical: 6px;
+  --input-padding-horizontal: 8px;
+  --input-margin-vertical: 4px;
+}
+
+body {
+  padding: 0 var(--container-padding);
+  color: var(--vscode-foreground);
+  font-size: var(--vscode-font-size);
+  font-weight: var(--vscode-font-weight);
+  font-family: var(--vscode-font-family);
+  background-color: var(--vscode-sideBar-background);
+}
+
+button {
+  border: none;
+  padding: var(--input-padding-vertical) var(--input-padding-horizontal);
+  text-align: center;
+  outline: 1px solid transparent;
+  outline-offset: 2px !important;
+  cursor: pointer;
+  border-radius: 2px;
+}
+
+button:focus {
+  outline-color: var(--vscode-focusBorder);
+}
+
+.status-indicator {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+}
+
+.status-connected {
+  background-color: var(--vscode-testing-iconPassed, #73c991);
+}
+
+.status-disconnected {
+  background-color: var(--vscode-testing-iconFailed, #f14c4c);
+}

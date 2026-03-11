@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none" stroke="#333333" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Serial Agent: Robot head with signal waves (light theme version) -->
+
+  <!-- Robot head -->
+  <rect x="28" y="32" width="72" height="64" rx="12" fill="#333333" opacity="0.15"/>
+
+  <!-- Antenna -->
+  <line x1="64" y1="32" x2="64" y2="16"/>
+  <circle cx="64" cy="12" r="6" fill="#333333"/>
+
+  <!-- Left eye -->
+  <circle cx="48" cy="56" r="8" fill="#333333"/>
+
+  <!-- Right eye -->
+  <circle cx="80" cy="56" r="8" fill="#333333"/>
+
+  <!-- Mouth/speaker -->
+  <rect x="48" y="72" width="32" height="8" rx="2" fill="#333333" opacity="0.6"/>
+
+  <!-- Signal waves (left) -->
+  <path d="M16 48 Q8 64 16 80" stroke-width="2.5" opacity="0.6"/>
+  <path d="M6 36 Q-6 64 6 92" stroke-width="2" opacity="0.4"/>
+
+  <!-- Signal waves (right) -->
+  <path d="M112 48 Q120 64 112 80" stroke-width="2.5" opacity="0.6"/>
+  <path d="M122 36 Q134 64 122 92" stroke-width="2" opacity="0.4"/>
+</svg>

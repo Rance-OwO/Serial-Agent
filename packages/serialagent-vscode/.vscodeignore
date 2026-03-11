@@ -1,0 +1,28 @@
+.vscode/**
+src/**
+tsconfig.json
+webpack.config.js
+**/*.map
+**/*.d.ts
+
+# 排除所有 node_modules，只保留 @serialport/bindings-cpp（含原生 .node 二进制）和 node-gyp-build（加载器）
+node_modules/**
+
+# 保留 @serialport/bindings-cpp（含预编译 .node 二进制和运行时 JS）
+!node_modules/@serialport/
+!node_modules/@serialport/bindings-cpp/
+!node_modules/@serialport/bindings-cpp/**
+
+# 保留 node-gyp-build（bindings-cpp 的 .node 加载器）
+!node_modules/node-gyp-build/
+!node_modules/node-gyp-build/**
+
+# 保留 @serialport/bindings-interface（bindings-cpp 运行时 __exportStar 依赖）
+!node_modules/@serialport/bindings-interface/
+!node_modules/@serialport/bindings-interface/**
+
+# 保留 debug + ms（bindings-cpp 运行时 require("debug") 依赖）
+!node_modules/debug/
+!node_modules/debug/**
+!node_modules/ms/
+!node_modules/ms/**

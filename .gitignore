@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+out/
+
+# IDE
+.vscode/
+!packages/serialagent-vscode/.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# npm
+*.tgz
+
+# VS Code Extension
+*.vsix
+
+# Keil Project - freertos_hello
+_KeilProject/freertos_hello/
+
+# Reference folder
+_Reference/
+_KeilProject
+
+# AI IDE config
+.claude/
+.windsurf/
+.cursor/
+prodoc/

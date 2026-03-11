@@ -1,0 +1,509 @@
+/* Serial Agent 侧边栏 Webview 主样式 */
+
+/* ============================================================
+   全局
+   ============================================================ */
+body {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  margin: 0;
+  padding: 0 8px;
+  overflow: hidden;
+}
+
+/* ============================================================
+   状态栏：连接状态 + RX/TX 计数
+   ============================================================ */
+
+.status-bar {
+  display: flex;
+  align-items: center;
+  padding: 6px 0;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  border-bottom: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.2));
+  margin-bottom: 8px;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.spacer { flex: 1; }
+
+.counter {
+  font-family: var(--vscode-editor-font-family, 'Consolas', monospace);
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 2px;
+  background: var(--vscode-badge-background, rgba(128,128,128,0.15));
+  color: var(--vscode-badge-foreground, var(--vscode-descriptionForeground));
+}
+
+/* 连接状态指示点 */
+.status-indicator {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.status-connected { background: #4ec9b0; }
+.status-disconnected { background: #6c6c6c; }
+
+/* ============================================================
+   配置区域
+   ============================================================ */
+
+.config-section {
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+
+.config-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 4px;
+  gap: 6px;
+}
+
+.config-row label {
+  font-size: 11px;
+  font-weight: 600;
+  min-width: 38px;
+  color: var(--vscode-foreground);
+}
+
+.config-control {
+  display: flex;
+  flex: 1;
+  gap: 4px;
+  align-items: center;
+}
+
+/* Select 和 Input 统一样式 */
+.config-row select,
+.config-section select,
+.config-row input[type="number"] {
+  flex: 1;
+  padding: 3px 6px;
+  font-size: 12px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border, rgba(128, 128, 128, 0.3));
+  border-radius: 2px;
+  outline: none;
+}
+
+.config-row select:focus,
+.config-row input[type="number"]:focus {
+  border-color: var(--vscode-focusBorder);
+}
+
+.config-row select:disabled,
+.config-row input[type="number"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 去掉 number input 的上下箭头（Webkit） */
+.config-row input[type="number"]::-webkit-inner-spin-button,
+.config-row input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.config-row input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* 高级参数折叠面板 */
+#advanced-config {
+  margin-top: 4px;
+}
+
+#advanced-config summary {
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--vscode-descriptionForeground);
+  padding: 2px 0;
+  user-select: none;
+}
+
+#advanced-config summary:hover {
+  color: var(--vscode-foreground);
+}
+
+#advanced-config .config-row {
+  margin-left: 8px;
+}
+
+/* 刷新按钮（图标按钮） */
+.icon-btn {
+  padding: 3px 7px;
+  font-size: 14px;
+  background: var(--vscode-button-secondaryBackground, rgba(128, 128, 128, 0.2));
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.icon-btn:hover {
+  background: var(--vscode-button-secondaryHoverBackground, rgba(128, 128, 128, 0.3));
+}
+
+/* ============================================================
+   操作按钮栏
+   ============================================================ */
+
+.action-bar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+  flex-shrink: 0;
+}
+
+.btn-primary {
+  flex: 2;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+}
+
+.btn-primary:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+
+.btn-danger {
+  flex: 2;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  color: #fff;
+  background: var(--vscode-inputValidation-errorBorder, #f14c4c);
+}
+
+.btn-danger:hover {
+  opacity: 0.85;
+}
+
+.btn-secondary {
+  flex: 1;
+  padding: 5px 10px;
+  font-size: 12px;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  background: var(--vscode-button-secondaryBackground, rgba(128, 128, 128, 0.2));
+}
+
+.btn-secondary:hover {
+  background: var(--vscode-button-secondaryHoverBackground, rgba(128, 128, 128, 0.3));
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ============================================================
+   选项栏：时间戳 / HEX / 换行符
+   ============================================================ */
+
+.options-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  flex-shrink: 0;
+}
+
+.option-item {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.option-item input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+}
+
+.option-item span {
+  font-size: 11px;
+}
+
+.small-select {
+  padding: 1px 4px;
+  font-size: 11px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border, rgba(128, 128, 128, 0.3));
+  border-radius: 2px;
+  outline: none;
+  margin-left: auto;
+}
+
+.small-select:focus {
+  border-color: var(--vscode-focusBorder);
+}
+
+/* ============================================================
+   内容区域容器（日志 + 分隔条 + 发送）
+   ============================================================ */
+
+.content-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ============================================================
+   日志区域
+   ============================================================ */
+
+.log-section {
+  flex: 7 1 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 60px;
+  overflow: hidden;
+}
+
+.log-area {
+  font-family: var(--vscode-editor-font-family, 'Consolas', monospace);
+  font-size: 12px;
+  line-height: 1.4;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-editor-foreground);
+  padding: 6px 8px;
+  border-radius: 3px;
+  border: 1px solid var(--vscode-input-border, rgba(128, 128, 128, 0.2));
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  flex: 1;
+}
+
+/* 发送回显样式 */
+.log-echo {
+  color: var(--vscode-terminal-ansiGreen, #4ec94e);
+  font-style: italic;
+}
+
+/* ============================================================
+   拖拽分隔条
+   ============================================================ */
+
+.resize-handle {
+  height: 6px;
+  cursor: ns-resize;
+  background: transparent;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.resize-handle::after {
+  content: '';
+  position: absolute;
+  left: 30%;
+  right: 30%;
+  top: 2px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--vscode-panel-border, rgba(128, 128, 128, 0.3));
+  transition: background 0.15s;
+}
+
+.resize-handle:hover::after {
+  background: var(--vscode-focusBorder, #007acc);
+}
+
+/* ============================================================
+   发送区域
+   ============================================================ */
+
+.send-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 4px;
+  flex: 3 1 0;
+  min-height: 60px;
+}
+
+/* HEX Send + History 下拉行 */
+.send-options-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ---- 自定义 History 下拉组件 ---- */
+.history-dropdown {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.history-toggle {
+  width: 100%;
+  padding: 2px 8px;
+  font-size: 11px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border, rgba(128, 128, 128, 0.3));
+  border-radius: 2px;
+  cursor: pointer;
+  outline: none;
+}
+
+.history-toggle:hover {
+  border-color: var(--vscode-focusBorder);
+}
+
+/* 下拉菜单（向上弹出，避免被底部截断） */
+.history-menu {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  max-height: 180px;
+  overflow-y: auto;
+  background: var(--vscode-dropdown-background, var(--vscode-input-background));
+  border: 1px solid var(--vscode-dropdown-border, var(--vscode-input-border, rgba(128,128,128,0.4)));
+  border-radius: 3px;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.2);
+  z-index: 100;
+}
+
+.history-dropdown.open .history-menu {
+  display: block;
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  font-size: 11px;
+  cursor: default;
+}
+
+.history-item:hover {
+  background: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.15));
+}
+
+.history-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  color: var(--vscode-foreground);
+}
+
+.history-delete {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  line-height: 16px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: bold;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--vscode-errorForeground, #f44);
+  cursor: pointer;
+  padding: 0;
+}
+
+.history-delete:hover {
+  background: var(--vscode-inputValidation-errorBackground, rgba(255, 68, 68, 0.15));
+}
+
+.history-empty {
+  padding: 6px 8px;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  text-align: center;
+  font-style: italic;
+}
+
+/* Send 按钮 */
+.btn-send {
+  padding: 2px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+  flex-shrink: 0;
+}
+
+.btn-send:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+
+.btn-send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 发送输入行：textarea 独占 */
+.send-input-row {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.send-input-row textarea {
+  flex: 1;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-family: var(--vscode-editor-font-family, 'Consolas', monospace);
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border, rgba(128, 128, 128, 0.3));
+  border-radius: 2px;
+  outline: none;
+  resize: none;
+  line-height: 1.4;
+}
+
+.send-input-row textarea:focus {
+  border-color: var(--vscode-focusBorder);
+}
+
+.send-input-row textarea:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

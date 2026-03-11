@@ -1,0 +1,210 @@
+{
+  "name": "serialagent-vscode",
+  "displayName": "Serial Agent",
+  "description": "AI-powered embedded serial debugging agent - let AI read serial logs, analyze issues, and form a debug loop",
+  "version": "1.0.19",
+  "publisher": "serialagent",
+  "private": true,
+  "license": "MIT",
+  "icon": "media/SerialAgent.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Debuggers",
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "serialagent",
+          "title": "Serial Agent",
+          "icon": "media/SerialAgent_icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "serialagent": [
+        {
+          "type": "webview",
+          "id": "serialagent.serialPanel",
+          "name": "Serial Monitor"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "serialagent.refreshPorts",
+        "title": "Refresh Serial Ports",
+        "category": "Serial Agent",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "serialagent.disconnect",
+        "title": "Disconnect Serial Port",
+        "category": "Serial Agent"
+      },
+      {
+        "command": "serialagent.clearLog",
+        "title": "Clear Serial Log",
+        "category": "Serial Agent"
+      },
+      {
+        "command": "serialagent.toggleConnection",
+        "title": "Toggle Serial Connection",
+        "category": "Serial Agent"
+      },
+      {
+        "command": "serialagent.toggleBridge",
+        "title": "Toggle MCP Bridge Server",
+        "category": "Serial Agent"
+      },
+      {
+        "command": "serialagent.openInTab",
+        "title": "Open Serial Agent",
+        "category": "Serial Agent",
+        "icon": {
+          "light": "media/SerialAgent.svg",
+          "dark": "media/SerialAgent.svg"
+        }
+      },
+      {
+        "command": "serialagent.keil.build",
+        "title": "Build STM32 (Keil)",
+        "category": "Serial Agent"
+      },
+      {
+        "command": "serialagent.keil.flash",
+        "title": "Flash STM32 (JLink)",
+        "category": "Serial Agent"
+      },
+      {
+        "command": "serialagent.keil.buildAndFlash",
+        "title": "Build and Flash STM32",
+        "category": "Serial Agent"
+      },
+      {
+        "command": "serialagent.keil.openSettings",
+        "title": "Open Keil/JLink Settings",
+        "category": "Serial Agent"
+      },
+      {
+        "command": "serialagent.keil.selectJlinkDevice",
+        "title": "Select JLink CPU Name",
+        "category": "Serial Agent"
+      }
+    ],
+    "configuration": {
+      "title": "Serial Agent",
+      "properties": {
+        "serialagent.keil.projectFile": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "markdownDescription": "Path to Keil .uvprojx/.uvproj project file. Supports relative path from workspace root."
+        },
+        "serialagent.keil.target": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "markdownDescription": "(Optional) Keil target name. Empty means first target in .uvprojx."
+        },
+        "serialagent.keil.uv4Path": {
+          "type": "string",
+          "default": "C:\\Keil_v5\\UV4\\UV4.exe",
+          "scope": "machine",
+          "markdownDescription": "Path to Keil UV4 executable used for command-line build."
+        },
+        "serialagent.keil.armcc5Path": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "ARMCC5 bin directory (for example: C:\\Keil_v5\\ARM\\ARMCC\\bin)."
+        },
+        "serialagent.keil.resultPolicy": {
+          "type": "string",
+          "default": "log-and-artifact",
+          "scope": "resource",
+          "enum": ["log-and-artifact", "strict-exit-code"],
+          "markdownDescription": "Keil build success policy. `log-and-artifact`: prefer final 'Error(s)/Warning(s)' summary plus artifact existence (recommended for C51). `strict-exit-code`: require UV4 exit code 0."
+        },
+        "serialagent.keil.strictExitCode": {
+          "type": "boolean",
+          "default": false,
+          "scope": "resource",
+          "markdownDescription": "If true, always treat non-zero UV4 exit code as build failure. This overrides compatibility behavior for warning-only C51 builds."
+        },
+        "serialagent.jlink.installDirectory": {
+          "type": "string",
+          "default": "C:\\Program Files (x86)\\SEGGER\\JLink",
+          "scope": "machine",
+          "markdownDescription": "JLink installation directory."
+        },
+        "serialagent.jlink.device": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "JLink CPU name used for flashing. Use command `Serial Agent: Select JLink CPU Name` to pick from current Keil project targets."
+        },
+        "serialagent.jlink.interface": {
+          "type": "string",
+          "default": "SWD",
+          "scope": "resource",
+          "enum": ["SWD", "JTAG"],
+          "markdownDescription": "JLink interface type."
+        },
+        "serialagent.jlink.speed": {
+          "type": "number",
+          "default": 4000,
+          "scope": "resource",
+          "markdownDescription": "JLink speed in kHz."
+        },
+        "serialagent.jlink.baseAddr": {
+          "type": "string",
+          "default": "0x08000000",
+          "scope": "resource",
+          "markdownDescription": "Base address used when flashing .bin file via JLink loadfile."
+        }
+      }
+    },
+    "menus": {
+      "editor/title": [
+        {
+          "command": "serialagent.openInTab",
+          "group": "navigation",
+          "when": "true"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "webpack --config webpack.config.js",
+    "build": "webpack --config webpack.config.js",
+    "pack": "node pack.js",
+    "clean": "rimraf dist",
+    "watch": "tsc -p tsconfig.json -w"
+  },
+  "dependencies": {
+    "serialport": "^12.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/serialagent/serial-agent"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.2",
+    "@types/vscode": "^1.85.0",
+    "@vercel/ncc": "^0.38.4",
+    "node-loader": "^2.1.0",
+    "rimraf": "^5.0.0",
+    "ts-loader": "^9.5.4",
+    "typescript": "^5.5.0",
+    "webpack": "^5.105.3",
+    "webpack-cli": "^6.0.1"
+  }
+}
