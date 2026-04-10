@@ -116,7 +116,7 @@ npx webpack --config webpack.config.js
 
 - **自动启动** — 扩展激活时自动启动 Bridge Server
 - **服务发现** — 在 `~/.serialagent/bridge.json` 写入服务信息
-- **Token 认证** — 每次激活生成新的 Token（可选启用）
+- **Token 认证** — 每次激活生成新的 Token（默认启用）
 - **状态栏指示** — 左下角显示 Bridge Server 运行状态
 
 #### 自动重连机制
@@ -210,8 +210,8 @@ Bridge Server 提供 REST API 供 MCP Server 调用：
 
 **安全特性**：
 - 仅绑定 `127.0.0.1`（本地访问）
-- Token 认证（可选启用）
-- CORS 限制（生产环境建议配置）
+- Token 认证（默认启用）
+- CORS 限制（仅允许本地 `localhost/127.0.0.1` 来源回显 `Access-Control-Allow-Origin`）
 
 ## 依赖项
 

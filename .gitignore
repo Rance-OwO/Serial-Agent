@@ -31,5 +31,7 @@ _KeilProject
 .windsurf/
 .cursor/
 prodoc/
+.playwright-cli/
+__coding_plan/
 
 AGENTS.md

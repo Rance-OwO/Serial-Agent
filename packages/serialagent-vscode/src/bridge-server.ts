@@ -36,7 +36,7 @@ export class BridgeServer {
   private _authEnabled: boolean;
   private _version: string;
 
-  constructor(sm: ISerialManager, logger: ILogger, authEnabled = false, version = '0.0.0') {
+  constructor(sm: ISerialManager, logger: ILogger, authEnabled = true, version = '0.0.0') {
     this._serialManager = sm;
     this._logger = logger;
     this._authEnabled = authEnabled;
@@ -50,6 +50,14 @@ export class BridgeServer {
 
   get port(): number { return this._port; }
   get token(): string { return this._token; }
+
+  private _resolveAllowedOrigin(origin: string | undefined): string | null {
+    if (!origin) { return null; }
+    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) {
+      return origin;
+    }
+    return null;
+  }
 
   // ---- 生命周期 ----
 
@@ -147,8 +155,12 @@ export class BridgeServer {
   // ---- 请求路由 ----
 
   private async _handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-    // CORS headers
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    // CORS headers: only echo trusted local origins.
+    const allowedOrigin = this._resolveAllowedOrigin(req.headers.origin);
+    if (allowedOrigin) {
+      res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
+      res.setHeader('Vary', 'Origin');
+    }
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 

@@ -152,7 +152,7 @@ describe('Bridge Server API', () => {
   beforeAll(async () => {
     mock = new MockSerialManager();
     logger = new SilentLogger();
-    bridge = new BridgeServer(mock, logger, true);
+    bridge = new BridgeServer(mock, logger);
     await bridge.start();
     port = bridge.port;
     token = bridge.token;
@@ -619,12 +619,24 @@ describe('Bridge Server API', () => {
   });
 
   describe('协议与格式一致性', () => {
-    it('OPTIONS 预检请求应返回 204 和 CORS 头', async () => {
-      const res = await rawHttpRequest(port, 'OPTIONS', '/api/status');
+    it('OPTIONS 预检请求：本地 Origin 应回显允许源', async () => {
+      const res = await rawHttpRequest(port, 'OPTIONS', '/api/status', undefined, {
+        Origin: 'http://localhost:3000',
+      });
       expect(res.status).toBe(204);
-      expect(res.headers['access-control-allow-origin']).toBe('*');
+      expect(res.headers['access-control-allow-origin']).toBe('http://localhost:3000');
       expect(String(res.headers['access-control-allow-methods'])).toContain('GET');
       expect(String(res.headers['access-control-allow-methods'])).toContain('POST');
+      expect(String(res.headers['access-control-allow-headers'])).toContain('Authorization');
+    });
+
+    it('OPTIONS 预检请求：非本地 Origin 不应返回 Access-Control-Allow-Origin', async () => {
+      const res = await rawHttpRequest(port, 'OPTIONS', '/api/status', undefined, {
+        Origin: 'https://evil.example.com',
+      });
+      expect(res.status).toBe(204);
+      expect(res.headers['access-control-allow-origin']).toBeUndefined();
+      expect(String(res.headers['access-control-allow-methods'])).toContain('GET');
       expect(String(res.headers['access-control-allow-headers'])).toContain('Authorization');
     });
 
