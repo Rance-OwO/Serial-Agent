@@ -12,6 +12,9 @@ export interface PortInfo {
   productId?: string;
   vendorId?: string;
   serialNumber?: string;
+  pnpId?: string;
+  friendlyName?: string;
+  driverLabel?: string;
 }
 
 /** 串口完整配置（连接参数 + 显示选项） */

@@ -356,32 +356,22 @@ body {
   position: absolute;
   inset: 0;
   display: flex;
-  flex-direction: column;
+  align-items: center;
   justify-content: center;
-  align-items: flex-start;
-  gap: 6px;
-  padding: 18px;
-  border: 1px dashed var(--vscode-panel-border, rgba(128, 128, 128, 0.3));
-  border-radius: 8px;
-  background: linear-gradient(180deg, rgba(55, 148, 255, 0.05), transparent);
+  padding: 16px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
   z-index: 1;
+  pointer-events: none;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: center;
 }
 
 .empty-state.hidden {
   display: none;
-}
-
-.empty-state-title {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--vscode-foreground);
-}
-
-.empty-state-text {
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--vscode-descriptionForeground);
-  max-width: 460px;
 }
 
 .resize-handle {

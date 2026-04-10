@@ -641,26 +641,17 @@
       return;
     }
 
-    const title = logEmptyState.querySelector('.empty-state-title');
-    const text = logEmptyState.querySelector('.empty-state-text');
-    if (!(title && text)) {
-      return;
-    }
-
     if (activeLogFilter) {
-      title.textContent = 'No matching logs';
-      text.textContent = 'Try a different keyword or clear the filter to see the full capture.';
+      logEmptyState.textContent = 'No matching logs.';
       return;
     }
 
     if (connected) {
-      title.textContent = 'Waiting for serial output';
-      text.textContent = 'The target is connected. Send a command or run Build+Flash to populate the log stream.';
+      logEmptyState.textContent = 'Waiting for serial output...';
       return;
     }
 
-    title.textContent = 'Ready for serial debugging';
-    text.textContent = 'Select a port, open the connection, or run Build+Flash to capture fresh boot logs.';
+    logEmptyState.textContent = 'Open a COM port to start reading logs.';
   }
 
   function updateFreezeButton() {
@@ -685,6 +676,32 @@
     return (bytes / 1048576).toFixed(1) + ' MB';
   }
 
+  function formatPortLabel(port) {
+    const driverLabel = normalizeDriverLabel(port.driverLabel || port.friendlyName);
+    if (driverLabel) {
+      return `${port.path} ${driverLabel}`;
+    }
+
+    let label = port.path;
+    if (port.manufacturer) { label += ' - ' + port.manufacturer; }
+    if (port.vendorId) { label += ' (VID:' + port.vendorId + ')'; }
+    return label;
+  }
+
+  function buildPortTooltip(port) {
+    return [port.friendlyName, port.manufacturer, port.pnpId].filter(Boolean).join('\n');
+  }
+
+  function normalizeDriverLabel(label) {
+    if (!label) {
+      return '';
+    }
+    return String(label)
+      .replace(/\s*\((COM\d+)\)\s*$/i, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
   window.addEventListener('message', (event) => {
     const message = event.data;
 
@@ -704,10 +721,9 @@
           ports.forEach((port) => {
             const option = document.createElement('option');
             option.value = port.path;
-            let label = port.path;
-            if (port.manufacturer) { label += ' - ' + port.manufacturer; }
-            if (port.vendorId) { label += ' (VID:' + port.vendorId + ')'; }
+            const label = formatPortLabel(port);
             option.textContent = label;
+            option.title = buildPortTooltip(port);
             portSelect.appendChild(option);
           });
         }

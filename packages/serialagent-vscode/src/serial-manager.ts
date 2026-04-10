@@ -1,3 +1,4 @@
+import { execFile } from 'child_process';
 import { PortInfo, SerialConfig, DEFAULT_CONFIG, ISerialManager } from './types';
 
 type SerialPortClass = import('serialport').SerialPort;
@@ -9,6 +10,23 @@ let serialportError: string | null = null;
 const MAX_LOG_LINES = 5000;
 const MAX_RX_BUFFER = 1024 * 1024;
 const RECONNECT_INTERVAL_MS = 2000;
+const PORT_METADATA_TIMEOUT_MS = 3000;
+
+interface RawSerialPortInfo {
+  path: string;
+  manufacturer?: string;
+  productId?: string;
+  vendorId?: string;
+  serialNumber?: string;
+  pnpId?: string;
+}
+
+interface WindowsPortMetadata {
+  path: string;
+  friendlyName?: string;
+  driverLabel?: string;
+  pnpId?: string;
+}
 
 export interface SerialManagerCallbacks {
   onLog: (text: string) => void;
@@ -71,14 +89,22 @@ export class SerialManager implements SerialRuntime {
         `serialport native module load failed: ${serialportError}\nPlease check extension is properly installed (with prebuilt binaries)`,
       );
     }
-    const ports = await serialPort.list();
-    return ports.map((port) => ({
-      path: port.path,
-      manufacturer: port.manufacturer,
-      productId: port.productId,
-      vendorId: port.vendorId,
-      serialNumber: port.serialNumber,
-    }));
+    const ports = await serialPort.list() as RawSerialPortInfo[];
+    const windowsMetadata = await loadWindowsPortMetadata();
+
+    return ports.map((port) => {
+      const metadata = windowsMetadata.get(port.path.toUpperCase());
+      return {
+        path: port.path,
+        manufacturer: port.manufacturer,
+        productId: port.productId,
+        vendorId: port.vendorId,
+        serialNumber: port.serialNumber,
+        pnpId: port.pnpId ?? metadata?.pnpId,
+        friendlyName: metadata?.friendlyName,
+        driverLabel: metadata?.driverLabel,
+      };
+    });
   }
 
   async connect(config: SerialConfig): Promise<boolean> {
@@ -337,5 +363,58 @@ export class SerialManager implements SerialRuntime {
       this._reconnectTimer = null;
     }
     this._reconnecting = false;
+  }
+}
+
+async function loadWindowsPortMetadata(): Promise<Map<string, WindowsPortMetadata>> {
+  if (process.platform !== 'win32') {
+    return new Map();
+  }
+
+  const powershell = process.env.SystemRoot
+    ? `${process.env.SystemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`
+    : 'powershell.exe';
+  const script = [
+    '$ErrorActionPreference = "Stop"',
+    '$items = Get-CimInstance Win32_PnPEntity | Where-Object { $_.Name -match "\\((COM\\d+)\\)" } | ForEach-Object {',
+    '  [pscustomobject]@{',
+    '    path = $Matches[1].ToUpper()',
+    '    friendlyName = $_.Name',
+    '    driverLabel = ($_.Name -replace "\\s*\\(COM\\d+\\)\\s*$", "").Trim()',
+    '    pnpId = $_.PNPDeviceID',
+    '  }',
+    '}',
+    '$items | ConvertTo-Json -Compress',
+  ].join('; ');
+
+  const stdout = await new Promise<string>((resolve) => {
+    execFile(
+      powershell,
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
+      { timeout: PORT_METADATA_TIMEOUT_MS, windowsHide: true, maxBuffer: 1024 * 1024 },
+      (error, output) => {
+        if (error || !output) {
+          resolve('');
+          return;
+        }
+        resolve(output.trim());
+      },
+    );
+  });
+
+  if (!stdout) {
+    return new Map();
+  }
+
+  try {
+    const parsed = JSON.parse(stdout) as WindowsPortMetadata | WindowsPortMetadata[];
+    const items = Array.isArray(parsed) ? parsed : [parsed];
+    return new Map(
+      items
+        .filter((item) => typeof item.path === 'string' && item.path.length > 0)
+        .map((item) => [item.path.toUpperCase(), item]),
+    );
+  } catch {
+    return new Map();
   }
 }

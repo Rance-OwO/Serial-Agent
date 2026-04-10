@@ -451,10 +451,7 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
 
   <div class="content-wrapper">
     <div class="log-section">
-      <div id="log-empty-state" class="empty-state">
-        <div class="empty-state-title">Ready for serial debugging</div>
-        <div class="empty-state-text">Select a port, open the connection, or run Build+Flash to capture fresh boot logs.</div>
-      </div>
+      <div id="log-empty-state" class="empty-state">Waiting for serial output...</div>
       <div id="log-area" class="log-area"></div>
     </div>
     <div id="resize-handle" class="resize-handle" title="Drag to resize"></div>
