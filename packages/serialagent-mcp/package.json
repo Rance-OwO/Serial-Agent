@@ -1,6 +1,6 @@
 {
   "name": "serial-agent-mcp",
-  "version": "1.0.1",
+  "version": "1.0.0",
   "private": true,
   "description": "Serial Agent MCP Server — AI-powered serial debugging tools via MCP protocol",
   "main": "./dist/index.js",

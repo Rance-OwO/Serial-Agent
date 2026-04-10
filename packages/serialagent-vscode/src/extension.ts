@@ -17,6 +17,28 @@ let bridgeStatusBarItem: vscode.StatusBarItem;
 let bridgeRunning = false;
 let keilTaskRunning = false;
 
+async function waitForWebviewPanelToBeActive(panel: vscode.WebviewPanel): Promise<void> {
+  if (panel.active) {
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    const disposable = panel.onDidChangeViewState((event) => {
+      if (!event.webviewPanel.active) {
+        return;
+      }
+      disposable.dispose();
+      resolve();
+    });
+  });
+}
+
+async function revealAndLockPanel(panel: vscode.WebviewPanel): Promise<void> {
+  panel.reveal(undefined, false);
+  await waitForWebviewPanelToBeActive(panel);
+  await vscode.commands.executeCommand('workbench.action.lockEditorGroup');
+}
+
 function updateBridgeStatusBar(): void {
   if (bridgeRunning) {
     bridgeStatusBarItem.text = '$(broadcast) SA Bridge Ready';
@@ -239,19 +261,28 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('serialagent.openInTab', async () => {
       if (provider.panel) {
-        provider.panel.reveal(vscode.ViewColumn.Two);
+        await revealAndLockPanel(provider.panel);
         return;
       }
 
+      const lastVisibleColumn = Math.max(
+        ...vscode.window.visibleTextEditors.map((editor) => editor.viewColumn || 0),
+        0,
+      );
       const hasVisibleEditors = vscode.window.visibleTextEditors.length > 0;
-      if (hasVisibleEditors) {
+
+      if (!hasVisibleEditors) {
         await vscode.commands.executeCommand('workbench.action.newGroupRight');
       }
+
+      const targetColumn = hasVisibleEditors
+        ? Math.max(lastVisibleColumn + 1, 1)
+        : vscode.ViewColumn.Two;
 
       const panel = vscode.window.createWebviewPanel(
         SerialPanelProvider.panelViewType,
         'Serial Agent',
-        hasVisibleEditors ? vscode.ViewColumn.Two : vscode.ViewColumn.One,
+        targetColumn,
         {
           enableScripts: true,
           retainContextWhenHidden: true,
@@ -268,6 +299,7 @@ export function activate(context: vscode.ExtensionContext) {
       panel.onDidDispose(() => {
         provider.clearPanel();
       });
+      await revealAndLockPanel(panel);
     }),
   );
 }

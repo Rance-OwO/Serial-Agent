@@ -220,7 +220,7 @@ export function registerTools(
    */
   targetServer.tool(
   'get_serial_status',
-  'Get the current serial port connection status including port, baudRate, byte counters, and buffered log lines',
+  'Read-only. Returns current serial connection status, reconnect state, byte counters, and buffered log metrics. Does not modify device or toolchain state.',
   {},
   async () => requester('GET', '/api/status'),
   );
@@ -231,7 +231,7 @@ export function registerTools(
  */
   targetServer.tool(
   'list_serial_ports',
-  'List all available serial port devices on the system, returning path, manufacturer, vendorId, productId',
+  'Read-only. Lists available serial port devices on the host system, including path and vendor information. Does not open ports or modify device state.',
   {},
   async () => requester('GET', '/api/ports'),
   );
@@ -242,7 +242,7 @@ export function registerTools(
  */
   targetServer.tool(
   'connect_serial',
-  'Connect to a specified serial port with optional configuration (baudRate, dataBits, parity, stopBits)',
+  'Device interaction. Opens a serial connection to the specified port with optional serial settings. May change host/device communication state.',
   {
     port: z.string().describe('Serial port path, e.g. COM3 or /dev/ttyUSB0'),
     baudRate: z.number().optional().default(115200).describe('Baud rate, default 115200'),
@@ -260,7 +260,7 @@ export function registerTools(
  */
   targetServer.tool(
   'disconnect_serial',
-  'Disconnect the currently connected serial port. Safe to call even if not connected (idempotent)',
+  'Device interaction. Closes the currently connected serial port. Safe to call even if not connected, but it changes host/device communication state.',
   {},
   async () => requester('POST', '/api/disconnect'),
   );
@@ -271,7 +271,7 @@ export function registerTools(
  */
   targetServer.tool(
   'read_serial_log',
-  'Read recent serial log lines from the buffer. Returns the most recent N lines and total buffered count',
+  'Read-only. Returns recent serial log lines from the bridge buffer, including total buffered count. Does not modify device state.',
   {
     lines: z.number().optional().default(50).describe('Number of recent lines to return, default 50'),
   },
@@ -286,7 +286,7 @@ export function registerTools(
  */
   targetServer.tool(
   'send_serial_data',
-  'Send data to the connected serial port. Supports text and HEX mode',
+  'Side-effectful device interaction. Sends text or HEX bytes to the connected serial device and may trigger device behavior changes.',
   {
     data: z.string().describe('Data to send'),
     hexMode: z.boolean().optional().default(false).describe('Send as HEX bytes (e.g. "41 42 0D 0A"), default false'),
@@ -305,7 +305,7 @@ export function registerTools(
  */
   targetServer.tool(
   'clear_serial_log',
-  'Clear the serial log buffer and reset RX/TX byte counters. Use before flashing to ensure clean log output',
+  'Local bridge state reset. Clears buffered serial logs and RX/TX counters. Does not flash firmware, but it removes locally buffered evidence.',
   {},
   async () => requester('POST', '/api/clear'),
   );
@@ -317,7 +317,7 @@ export function registerTools(
  */
   targetServer.tool(
   'wait_for_output',
-  'Wait for serial output matching a pattern. Blocks until matched or timeout. Use after prompting user to flash the device.',
+  'Read-mostly wait operation. Waits for serial output matching a pattern using buffered logs and future output. Does not send data or modify device state.',
   {
     pattern: z.string().describe('Regex or text pattern to match in serial output'),
     timeout: z.number().optional().default(30).describe('Timeout in seconds (1-120), default 30'),
@@ -337,7 +337,7 @@ export function registerTools(
  */
   targetServer.tool(
   'send_and_wait',
-  'Atomically send data and wait for matching serial output. Subscribes to log BEFORE sending, eliminating race conditions. Preferred over separate send_serial_data + wait_for_output.',
+  'Side-effectful device interaction. Sends data to the connected serial device, then waits for matching output. Preferred over separate send + wait when device state may change.',
   {
     data: z.string().describe('Data to send'),
     pattern: z.string().describe('Regex or text pattern to match in response'),
@@ -355,21 +355,21 @@ export function registerTools(
 
   targetServer.tool(
   'check_keil_config',
-  'Check whether Keil/JLink configuration is valid for build and flash. Returns per-item checks and configOk.',
+  'Read-only toolchain validation. Checks whether Keil/JLink configuration is ready for build and flash. Does not build, flash, or modify firmware.',
   {},
   async () => requester('GET', '/api/keil/config-check'),
   );
 
   targetServer.tool(
   'build_keil_project',
-  'Run Keil build and return clear success/failure with artifact path if available.',
+  'External toolchain action. Invokes a Keil build and may update local build artifacts on disk. Does not flash the target device.',
   {},
   async () => requester('POST', '/api/keil/build'),
   );
 
   targetServer.tool(
   'flash_keil_firmware',
-  'Run JLink flash. Optionally pass artifactPath; otherwise use latest built artifact.',
+  'External side-effectful toolchain action. Invokes JLink flashing and may overwrite firmware on the connected target device.',
   {
     artifactPath: z.string().optional().describe('Optional absolute artifact path (.hex/.axf/.bin)'),
   },
@@ -382,7 +382,7 @@ export function registerTools(
 
   targetServer.tool(
   'build_and_flash_keil',
-  'Run Keil build then JLink flash in one API call. Returns explicit build/flash success status.',
+  'External side-effectful toolchain action. Runs Keil build and JLink flash in one call, updating local artifacts and target device firmware state.',
   {},
   async () => requester('POST', '/api/keil/build-and-flash'),
   );

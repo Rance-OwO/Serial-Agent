@@ -61,6 +61,7 @@
   const historyMenu    = document.getElementById('history-menu');
   const resizeHandle = document.getElementById('resize-handle');
   const sendSection  = document.getElementById('send-section');
+  const contentWrapper = document.querySelector('.content-wrapper');
 
   /** 当前连接状态 */
   let connected = false;
@@ -86,7 +87,7 @@
       sendInput.value = previousState.sendText;
     }
     if (sendSection && previousState.sendHeight) {
-      sendSection.style.height = previousState.sendHeight + 'px';
+      sendSection.style.flexBasis = previousState.sendHeight + 'px';
     }
     // 恢复 HEX Send 状态
     if (optHexSend && previousState.hexSend) {
@@ -109,16 +110,20 @@
   // ============================================================
   // 拖拽分隔条：日志区 ↔ 发送区 大小调整
   // ============================================================
-  if (resizeHandle && sendSection) {
+  if (resizeHandle && sendSection && contentWrapper instanceof HTMLElement) {
+    const MIN_LOG_HEIGHT = 60;
+    const MIN_SEND_HEIGHT = 60;
     let dragging = false;
     let startY = 0;
     let startHeight = 0;
+    let wrapperHeight = 0;
 
     resizeHandle.addEventListener('mousedown', (e) => {
       e.preventDefault();
       dragging = true;
       startY = e.clientY;
       startHeight = sendSection.offsetHeight;
+      wrapperHeight = contentWrapper.clientHeight;
       document.body.style.cursor = 'ns-resize';
       document.body.style.userSelect = 'none';
     });
@@ -127,8 +132,12 @@
       if (!dragging) { return; }
       // 向上拖 = 发送区变大（deltaY 为负值时 height 增加）
       const delta = startY - e.clientY;
-      const newHeight = Math.max(60, Math.min(window.innerHeight * 0.6, startHeight + delta));
-      sendSection.style.height = newHeight + 'px';
+      const maxHeight = Math.max(
+        MIN_SEND_HEIGHT,
+        wrapperHeight - MIN_LOG_HEIGHT - resizeHandle.offsetHeight,
+      );
+      const newHeight = Math.max(MIN_SEND_HEIGHT, Math.min(maxHeight, startHeight + delta));
+      sendSection.style.flexBasis = newHeight + 'px';
     });
 
     document.addEventListener('mouseup', () => {

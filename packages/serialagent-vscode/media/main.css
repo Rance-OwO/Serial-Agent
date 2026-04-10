@@ -281,7 +281,7 @@ body {
    ============================================================ */
 
 .log-section {
-  flex: 7 1 0;
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   min-height: 60px;
@@ -346,7 +346,7 @@ body {
   flex-direction: column;
   gap: 4px;
   padding-bottom: 4px;
-  flex: 3 1 0;
+  flex: 0 0 30%;
   min-height: 60px;
 }
 
