@@ -358,15 +358,18 @@ body {
   display: flex;
   align-items: flex-start;
   justify-content: flex-start;
-  padding: 10px 12px;
+  padding: 8px 10px;
   background: transparent;
   border: none;
   border-radius: 0;
   z-index: 1;
   pointer-events: none;
-  color: var(--vscode-descriptionForeground);
-  font-size: 11px;
-  line-height: 1.4;
+  color: var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground));
+  font-size: 12px;
+  font-family: var(--vscode-editor-font-family, 'Consolas', monospace);
+  font-style: normal;
+  font-weight: 400;
+  line-height: 1.45;
   text-align: left;
 }
 
@@ -404,7 +407,7 @@ body {
   flex-direction: column;
   gap: 6px;
   padding-bottom: 4px;
-  flex: 0 0 30%;
+  flex: 0 0 38%;
   min-height: 120px;
 }
 
@@ -629,6 +632,15 @@ body {
   border-radius: 8px;
   outline: none;
   resize: none;
+  line-height: 1.45;
+}
+
+.send-input-row textarea::placeholder {
+  color: var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground));
+  font-size: 12px;
+  font-family: var(--vscode-editor-font-family, 'Consolas', monospace);
+  font-style: normal;
+  font-weight: 400;
   line-height: 1.45;
 }
 
