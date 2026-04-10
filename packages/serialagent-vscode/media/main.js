@@ -3,114 +3,407 @@
 /**
  * Serial Agent 侧边栏 Webview 脚本
  *
- * 功能：
- * - 串口选择 + 完整参数配置
- * - 多行发送（textarea，Enter 换行，Ctrl+Enter 发送，发送后保留内容）
- * - HEX 发送与 HEX 显示独立控制
- * - 日志区与发送区之间可拖拽调整大小
- * - 发送历史、RX/TX 计数、配置持久化
+ * P0 目标：
+ * - 日志工具条：搜索、冻结、自动滚动、复制、保存
+ * - 常用发送区：命令预设的一键发送和管理
+ * - 连接配置预设：保存和快速切换常用串口配置
+ * - 空状态引导：未连接时给出下一步提示
  */
 
 (function () {
   // @ts-ignore
   const vscode = acquireVsCodeApi();
 
-  // ============================================================
-  // DOM 引用
-  // ============================================================
-  const statusDot    = document.getElementById('status-dot');
-  const statusText   = document.getElementById('status-text');
-  const rxCountEl    = document.getElementById('rx-count');
-  const txCountEl    = document.getElementById('tx-count');
+  const MAX_HISTORY = 20;
+  const MAX_RENDER_ENTRIES = 5000;
+
+  /**
+   * @typedef {{ id: string; name: string; config: {
+   *   port: string;
+   *   baudRate: number;
+   *   dataBits: number;
+   *   parity: string;
+   *   stopBits: number;
+   *   lineEnding: string;
+   *   showTimestamp: boolean;
+   *   hexMode: boolean;
+   * } }} SerialProfile
+   */
+
+  /**
+   * @typedef {{ id: string; label: string; value: string; hexSend?: boolean }} QuickCommand
+   */
+
+  /**
+   * @typedef {{ text: string; kind: 'text' | 'echo' }} LogEntry
+   */
+
+  const statusDot = document.getElementById('status-dot');
+  const statusText = document.getElementById('status-text');
+  const rxCountEl = document.getElementById('rx-count');
+  const txCountEl = document.getElementById('tx-count');
+
   /** @type {HTMLSelectElement | null} */
-  const portSelect   = /** @type {HTMLSelectElement} */ (document.getElementById('port-select'));
+  const portSelect = /** @type {HTMLSelectElement} */ (document.getElementById('port-select'));
   /** @type {HTMLInputElement | null} */
   const baudrateInput = /** @type {HTMLInputElement} */ (document.getElementById('baudrate-input'));
   /** @type {HTMLSelectElement | null} */
   const databitsSelect = /** @type {HTMLSelectElement} */ (document.getElementById('databits-select'));
   /** @type {HTMLSelectElement | null} */
-  const paritySelect   = /** @type {HTMLSelectElement} */ (document.getElementById('parity-select'));
+  const paritySelect = /** @type {HTMLSelectElement} */ (document.getElementById('parity-select'));
   /** @type {HTMLSelectElement | null} */
   const stopbitsSelect = /** @type {HTMLSelectElement} */ (document.getElementById('stopbits-select'));
-  const refreshBtn   = document.getElementById('btn-refresh');
-  const connectBtn   = document.getElementById('btn-connect');
-  const clearBtn     = document.getElementById('btn-clear');
+  /** @type {HTMLSelectElement | null} */
+  const lineEndingSelect = /** @type {HTMLSelectElement} */ (document.getElementById('line-ending-select'));
+
+  const refreshBtn = document.getElementById('btn-refresh');
+  const connectBtn = document.getElementById('btn-connect');
+  const clearBtn = document.getElementById('btn-clear');
   const keilBuildBtn = document.getElementById('btn-keil-build');
   const keilFlashBtn = document.getElementById('btn-keil-flash');
   const keilBuildFlashBtn = document.getElementById('btn-keil-build-flash');
   const keilCpuBtn = document.getElementById('btn-keil-cpu');
   const keilConfigBtn = document.getElementById('btn-keil-config');
   const keilStatusEl = document.getElementById('keil-status');
+
   /** @type {HTMLInputElement | null} */
-  const optTimestamp  = /** @type {HTMLInputElement} */ (document.getElementById('opt-timestamp'));
+  const optTimestamp = /** @type {HTMLInputElement} */ (document.getElementById('opt-timestamp'));
   /** @type {HTMLInputElement | null} */
-  const optHex       = /** @type {HTMLInputElement} */ (document.getElementById('opt-hex'));
+  const optHex = /** @type {HTMLInputElement} */ (document.getElementById('opt-hex'));
   /** @type {HTMLInputElement | null} */
-  const optHexSend   = /** @type {HTMLInputElement} */ (document.getElementById('opt-hex-send'));
+  const optHexSend = /** @type {HTMLInputElement} */ (document.getElementById('opt-hex-send'));
   /** @type {HTMLInputElement | null} */
-  const optEcho      = /** @type {HTMLInputElement} */ (document.getElementById('opt-echo'));
-  /** @type {HTMLSelectElement | null} */
-  const lineEndingSelect = /** @type {HTMLSelectElement} */ (document.getElementById('line-ending-select'));
-  const logArea      = document.getElementById('log-area');
+  const optEcho = /** @type {HTMLInputElement} */ (document.getElementById('opt-echo'));
+  /** @type {HTMLInputElement | null} */
+  const optAutoScroll = /** @type {HTMLInputElement} */ (document.getElementById('opt-auto-scroll'));
+
+  const logArea = document.getElementById('log-area');
+  const logEmptyState = document.getElementById('log-empty-state');
+  /** @type {HTMLInputElement | null} */
+  const logSearchInput = /** @type {HTMLInputElement} */ (document.getElementById('log-search'));
+  const freezeBtn = document.getElementById('btn-freeze');
+  const copyLogBtn = document.getElementById('btn-copy-log');
+  const saveLogBtn = document.getElementById('btn-save-log');
+
   /** @type {HTMLTextAreaElement | null} */
-  const sendInput    = /** @type {HTMLTextAreaElement} */ (document.getElementById('send-input'));
+  const sendInput = /** @type {HTMLTextAreaElement} */ (document.getElementById('send-input'));
   /** @type {HTMLButtonElement | null} */
-  const sendBtn      = /** @type {HTMLButtonElement} */ (document.getElementById('btn-send'));
+  const sendBtn = /** @type {HTMLButtonElement} */ (document.getElementById('btn-send'));
   const historyDropdown = document.getElementById('history-dropdown');
-  const historyToggle  = document.getElementById('history-toggle');
-  const historyMenu    = document.getElementById('history-menu');
+  const historyToggle = document.getElementById('history-toggle');
+  const historyMenu = document.getElementById('history-menu');
   const resizeHandle = document.getElementById('resize-handle');
-  const sendSection  = document.getElementById('send-section');
+  const sendSection = document.getElementById('send-section');
   const contentWrapper = document.querySelector('.content-wrapper');
 
-  /** 当前连接状态 */
+  /** @type {HTMLSelectElement | null} */
+  const profileSelect = /** @type {HTMLSelectElement} */ (document.getElementById('profile-select'));
+  /** @type {HTMLInputElement | null} */
+  const profileNameInput = /** @type {HTMLInputElement} */ (document.getElementById('profile-name'));
+  const profileSaveBtn = document.getElementById('btn-profile-save');
+  const profileDeleteBtn = document.getElementById('btn-profile-delete');
+
+  const quickCommandList = document.getElementById('quick-command-list');
+  const quickCommandManageList = document.getElementById('quick-command-manage-list');
+  /** @type {HTMLInputElement | null} */
+  const quickCommandLabelInput = /** @type {HTMLInputElement} */ (document.getElementById('quick-command-label'));
+  /** @type {HTMLInputElement | null} */
+  const quickCommandValueInput = /** @type {HTMLInputElement} */ (document.getElementById('quick-command-value'));
+  /** @type {HTMLInputElement | null} */
+  const quickCommandHexInput = /** @type {HTMLInputElement} */ (document.getElementById('quick-command-hex'));
+  const quickCommandSaveBtn = document.getElementById('btn-quick-command-save');
+  const quickCommandResetBtn = document.getElementById('btn-quick-command-reset');
+
   let connected = false;
-
-  /** DOM 日志行数上限 */
-  const MAX_DISPLAY_LINES = 500;
-  let displayLineCount = 0;
-
-  /** 发送历史记录
-   *  @type {string[]} */
-  let sendHistory = [];
-  const MAX_HISTORY = 20;
-
-  /** 待恢复的端口 */
   let pendingPort = '';
+  let sendHistory = /** @type {string[]} */ ([]);
+  let serialProfiles = /** @type {SerialProfile[]} */ ([]);
+  let quickCommands = /** @type {QuickCommand[]} */ ([]);
+  let editingQuickCommandId = '';
+  let frozenLog = false;
+  let logEntries = /** @type {LogEntry[]} */ ([]);
+  let activeLogFilter = '';
 
-  // ============================================================
-  // Webview 状态恢复
-  // ============================================================
-  const previousState = vscode.getState();
-  if (previousState) {
+  restoreWebviewState();
+
+  bindSerialActions();
+  bindLogActions();
+  bindSendActions();
+  bindProfileActions();
+  bindQuickCommandActions();
+  bindResizeActions();
+
+  function restoreWebviewState() {
+    const previousState = vscode.getState();
+    if (!previousState) {
+      return;
+    }
+
     if (sendInput && previousState.sendText) {
       sendInput.value = previousState.sendText;
     }
     if (sendSection && previousState.sendHeight) {
       sendSection.style.flexBasis = previousState.sendHeight + 'px';
     }
-    // 恢复 HEX Send 状态
     if (optHexSend && previousState.hexSend) {
       optHexSend.checked = true;
-      if (sendInput) {
-        sendInput.placeholder = 'HEX: 41 42 0D 0A (Ctrl+Enter to send)';
-      }
     }
+    if (optAutoScroll && previousState.autoScroll !== undefined) {
+      optAutoScroll.checked = !!previousState.autoScroll;
+    }
+    if (logSearchInput && previousState.logFilter) {
+      logSearchInput.value = previousState.logFilter;
+      activeLogFilter = previousState.logFilter.toLowerCase();
+    }
+    if (previousState.frozenLog) {
+      frozenLog = true;
+      updateFreezeButton();
+    }
+    updateSendPlaceholder();
   }
 
-  /** 保存 Webview 状态（发送内容 + 区域高度 + HEX Send） */
   function saveState() {
     vscode.setState({
       sendText: sendInput?.value || '',
       sendHeight: sendSection ? sendSection.offsetHeight : undefined,
       hexSend: optHexSend?.checked || false,
+      autoScroll: optAutoScroll?.checked || false,
+      logFilter: logSearchInput?.value || '',
+      frozenLog,
     });
   }
 
-  // ============================================================
-  // 拖拽分隔条：日志区 ↔ 发送区 大小调整
-  // ============================================================
-  if (resizeHandle && sendSection && contentWrapper instanceof HTMLElement) {
+  function bindSerialActions() {
+    refreshBtn?.addEventListener('click', () => {
+      vscode.postMessage({ type: 'refreshPorts' });
+    });
+
+    connectBtn?.addEventListener('click', () => {
+      if (connected) {
+        vscode.postMessage({ type: 'disconnect' });
+        return;
+      }
+      const config = collectCurrentConfig();
+      vscode.postMessage({ type: 'connect', ...config });
+      vscode.postMessage({ type: 'saveConfig', config });
+    });
+
+    clearBtn?.addEventListener('click', () => {
+      vscode.postMessage({ type: 'clearLog' });
+      logEntries = [];
+      renderLogArea();
+    });
+
+    keilBuildBtn?.addEventListener('click', () => {
+      vscode.postMessage({ type: 'keilBuild' });
+    });
+    keilFlashBtn?.addEventListener('click', () => {
+      vscode.postMessage({ type: 'keilFlash' });
+    });
+    keilBuildFlashBtn?.addEventListener('click', () => {
+      vscode.postMessage({ type: 'keilBuildFlash' });
+    });
+    keilCpuBtn?.addEventListener('click', () => {
+      vscode.postMessage({ type: 'keilSelectCpu' });
+    });
+    keilConfigBtn?.addEventListener('click', () => {
+      vscode.postMessage({ type: 'keilOpenConfig' });
+    });
+
+    optTimestamp?.addEventListener('change', () => {
+      vscode.postMessage({ type: 'updateSettings', showTimestamp: optTimestamp.checked });
+    });
+    optHex?.addEventListener('change', () => {
+      vscode.postMessage({ type: 'updateSettings', hexMode: optHex.checked });
+    });
+    lineEndingSelect?.addEventListener('change', () => {
+      vscode.postMessage({ type: 'updateSettings', lineEnding: lineEndingSelect.value });
+    });
+
+    [
+      portSelect,
+      baudrateInput,
+      databitsSelect,
+      paritySelect,
+      stopbitsSelect,
+      lineEndingSelect,
+    ].forEach((element) => {
+      element?.addEventListener('change', persistCurrentConfigDraft);
+    });
+  }
+
+  function bindLogActions() {
+    logSearchInput?.addEventListener('input', () => {
+      activeLogFilter = (logSearchInput.value || '').trim().toLowerCase();
+      renderLogArea();
+      saveState();
+    });
+
+    optAutoScroll?.addEventListener('change', () => {
+      if (optAutoScroll.checked && !frozenLog) {
+        scrollLogToBottom();
+      }
+      saveState();
+    });
+
+    freezeBtn?.addEventListener('click', () => {
+      frozenLog = !frozenLog;
+      updateFreezeButton();
+      if (!frozenLog) {
+        renderLogArea();
+      }
+      saveState();
+    });
+
+    copyLogBtn?.addEventListener('click', async () => {
+      const visibleLog = getVisibleLogText();
+      if (!visibleLog.length) {
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(visibleLog);
+      } catch {
+        const range = document.createRange();
+        if (logArea) {
+          range.selectNodeContents(logArea);
+          const selection = window.getSelection();
+          selection?.removeAllRanges();
+          selection?.addRange(range);
+          document.execCommand('copy');
+          selection?.removeAllRanges();
+        }
+      }
+    });
+
+    saveLogBtn?.addEventListener('click', () => {
+      vscode.postMessage({
+        type: 'saveLogToFile',
+        lines: logEntries.map((entry) => entry.text.trimEnd()),
+      });
+    });
+  }
+
+  function bindSendActions() {
+    optHexSend?.addEventListener('change', () => {
+      updateSendPlaceholder();
+      saveState();
+    });
+
+    sendBtn?.addEventListener('click', () => {
+      doSend();
+    });
+
+    sendInput?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        doSend();
+      }
+    });
+
+    sendInput?.addEventListener('input', saveState);
+
+    historyToggle?.addEventListener('click', () => {
+      historyDropdown?.classList.toggle('open');
+    });
+
+    document.addEventListener('click', (event) => {
+      if (historyDropdown && !historyDropdown.contains(/** @type {Node} */ (event.target))) {
+        historyDropdown.classList.remove('open');
+      }
+    });
+  }
+
+  function bindProfileActions() {
+    profileSelect?.addEventListener('change', () => {
+      const selected = serialProfiles.find((profile) => profile.id === profileSelect.value);
+      if (!selected) {
+        if (profileNameInput) {
+          profileNameInput.value = '';
+        }
+        return;
+      }
+
+      if (profileNameInput) {
+        profileNameInput.value = selected.name;
+      }
+
+      applyConfigToInputs(selected.config);
+      persistCurrentConfigDraft();
+    });
+
+    profileSaveBtn?.addEventListener('click', () => {
+      const config = collectCurrentConfig();
+      const currentName = (profileNameInput?.value || '').trim() || buildProfileDefaultName(config);
+      const selectedId = profileSelect?.value || '';
+      const existing = serialProfiles.find((profile) => profile.id === selectedId);
+
+      const profile = {
+        id: existing?.id || createId('profile'),
+        name: currentName,
+        config,
+      };
+
+      serialProfiles = existing
+        ? serialProfiles.map((item) => item.id === existing.id ? profile : item)
+        : [profile, ...serialProfiles].slice(0, 10);
+
+      persistProfiles();
+      renderProfiles(profile.id);
+    });
+
+    profileDeleteBtn?.addEventListener('click', () => {
+      const selectedId = profileSelect?.value || '';
+      if (!selectedId) {
+        return;
+      }
+      serialProfiles = serialProfiles.filter((profile) => profile.id !== selectedId);
+      persistProfiles();
+      renderProfiles('');
+      if (profileNameInput) {
+        profileNameInput.value = '';
+      }
+    });
+  }
+
+  function bindQuickCommandActions() {
+    quickCommandSaveBtn?.addEventListener('click', () => {
+      const label = (quickCommandLabelInput?.value || '').trim();
+      const value = quickCommandValueInput?.value || '';
+
+      if (!label || !value.trim()) {
+        return;
+      }
+
+      const command = {
+        id: editingQuickCommandId || createId('cmd'),
+        label,
+        value,
+        hexSend: !!quickCommandHexInput?.checked,
+      };
+
+      const existingIndex = quickCommands.findIndex((item) => item.id === command.id);
+      if (existingIndex !== -1) {
+        quickCommands.splice(existingIndex, 1, command);
+      } else {
+        quickCommands.unshift(command);
+      }
+
+      quickCommands = quickCommands.slice(0, 12);
+      persistQuickCommands();
+      renderQuickCommands();
+      resetQuickCommandForm();
+    });
+
+    quickCommandResetBtn?.addEventListener('click', () => {
+      resetQuickCommandForm();
+    });
+  }
+
+  function bindResizeActions() {
+    if (!(resizeHandle && sendSection && contentWrapper instanceof HTMLElement)) {
+      return;
+    }
+
     const MIN_LOG_HEIGHT = 60;
     const MIN_SEND_HEIGHT = 60;
     let dragging = false;
@@ -118,173 +411,236 @@
     let startHeight = 0;
     let wrapperHeight = 0;
 
-    resizeHandle.addEventListener('mousedown', (e) => {
-      e.preventDefault();
+    resizeHandle.addEventListener('mousedown', (event) => {
+      event.preventDefault();
       dragging = true;
-      startY = e.clientY;
+      startY = event.clientY;
       startHeight = sendSection.offsetHeight;
       wrapperHeight = contentWrapper.clientHeight;
       document.body.style.cursor = 'ns-resize';
       document.body.style.userSelect = 'none';
     });
 
-    document.addEventListener('mousemove', (e) => {
-      if (!dragging) { return; }
-      // 向上拖 = 发送区变大（deltaY 为负值时 height 增加）
-      const delta = startY - e.clientY;
+    document.addEventListener('mousemove', (event) => {
+      if (!dragging) {
+        return;
+      }
+
+      const delta = startY - event.clientY;
       const maxHeight = Math.max(
         MIN_SEND_HEIGHT,
         wrapperHeight - MIN_LOG_HEIGHT - resizeHandle.offsetHeight,
       );
-      const newHeight = Math.max(MIN_SEND_HEIGHT, Math.min(maxHeight, startHeight + delta));
-      sendSection.style.flexBasis = newHeight + 'px';
+      const nextHeight = Math.max(MIN_SEND_HEIGHT, Math.min(maxHeight, startHeight + delta));
+      sendSection.style.flexBasis = nextHeight + 'px';
     });
 
     document.addEventListener('mouseup', () => {
-      if (dragging) {
-        dragging = false;
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-        saveState();
+      if (!dragging) {
+        return;
       }
+      dragging = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      saveState();
     });
   }
 
-  // ============================================================
-  // 事件绑定
-  // ============================================================
-
-  // 刷新串口列表
-  refreshBtn?.addEventListener('click', () => {
-    vscode.postMessage({ type: 'refreshPorts' });
-  });
-
-  // 连接/断开
-  connectBtn?.addEventListener('click', () => {
-    if (connected) {
-      vscode.postMessage({ type: 'disconnect' });
-    } else {
-      vscode.postMessage({
-        type: 'connect',
-        port: portSelect?.value || '',
-        baudRate: parseInt(baudrateInput?.value || '115200', 10),
-        dataBits: parseInt(databitsSelect?.value || '8', 10),
-        parity: paritySelect?.value || 'none',
-        stopBits: parseFloat(stopbitsSelect?.value || '1'),
-      });
-    }
-  });
-
-  // 清空日志
-  clearBtn?.addEventListener('click', () => {
-    vscode.postMessage({ type: 'clearLog' });
-    if (logArea) { logArea.textContent = ''; displayLineCount = 0; }
-  });
-
-  // Keil 操作
-  keilBuildBtn?.addEventListener('click', () => {
-    vscode.postMessage({ type: 'keilBuild' });
-  });
-  keilFlashBtn?.addEventListener('click', () => {
-    vscode.postMessage({ type: 'keilFlash' });
-  });
-  keilBuildFlashBtn?.addEventListener('click', () => {
-    vscode.postMessage({ type: 'keilBuildFlash' });
-  });
-  keilCpuBtn?.addEventListener('click', () => {
-    vscode.postMessage({ type: 'keilSelectCpu' });
-  });
-  keilConfigBtn?.addEventListener('click', () => {
-    vscode.postMessage({ type: 'keilOpenConfig' });
-  });
-
-  // 选项切换 → 通知 Extension（HEX Recv 只影响显示）
-  optTimestamp?.addEventListener('change', () => {
-    vscode.postMessage({ type: 'updateSettings', showTimestamp: optTimestamp.checked });
-  });
-  optHex?.addEventListener('change', () => {
-    vscode.postMessage({ type: 'updateSettings', hexMode: optHex.checked });
-  });
-  lineEndingSelect?.addEventListener('change', () => {
-    vscode.postMessage({ type: 'updateSettings', lineEnding: lineEndingSelect.value });
-  });
-
-  // HEX Send checkbox → 更新 placeholder + 持久化
-  optHexSend?.addEventListener('change', () => {
-    if (sendInput) {
-      sendInput.placeholder = optHexSend.checked
-        ? 'HEX: 41 42 0D 0A (Ctrl+Enter to send)'
-        : 'Send data... (Ctrl+Enter to send)';
-    }
-    saveState();
-  });
-
-  // ---- 发送逻辑 ----
-
-  /** 发送当前 textarea 内容（发送后不清空） */
-  function doSend() {
-    const text = sendInput?.value;
-    if (!text) { return; }
-
-    const hexSend = optHexSend?.checked || false;
-    vscode.postMessage({ type: 'sendData', text, hexSend });
-
-    // 发送回显：在日志区显示发送的内容
-    if (optEcho?.checked && logArea) {
-      const echoText = 'TX>> ' + text + '\n';
-      const echoSpan = document.createElement('span');
-      echoSpan.className = 'log-echo';
-      echoSpan.textContent = echoText;
-      logArea.appendChild(echoSpan);
-      const newLines = (echoText.match(/\n/g) || []).length;
-      displayLineCount += Math.max(newLines, 1);
-      logArea.scrollTop = logArea.scrollHeight;
-    }
-
-    // 更新发送历史（去重，移到最前）
-    const idx = sendHistory.indexOf(text);
-    if (idx !== -1) { sendHistory.splice(idx, 1); }
-    sendHistory.unshift(text);
-    if (sendHistory.length > MAX_HISTORY) { sendHistory.pop(); }
-    updateHistorySelect();
-    vscode.postMessage({ type: 'saveSendHistory', history: sendHistory });
-
-    // 发送后选中全部文本，方便下次覆盖或继续编辑
-    sendInput.select();
+  function collectCurrentConfig() {
+    return {
+      port: portSelect?.value || '',
+      baudRate: parseInt(baudrateInput?.value || '115200', 10),
+      dataBits: parseInt(databitsSelect?.value || '8', 10),
+      parity: paritySelect?.value || 'none',
+      stopBits: parseFloat(stopbitsSelect?.value || '1'),
+      lineEnding: lineEndingSelect?.value || 'none',
+      showTimestamp: !!optTimestamp?.checked,
+      hexMode: !!optHex?.checked,
+    };
   }
 
-  sendBtn?.addEventListener('click', doSend);
+  /**
+   * @param {{ port: string; baudRate: number; dataBits: number; parity: string; stopBits: number; lineEnding: string; showTimestamp: boolean; hexMode: boolean }} config
+   */
+  function applyConfigToInputs(config) {
+    if (portSelect) { portSelect.value = config.port || ''; }
+    if (baudrateInput) { baudrateInput.value = String(config.baudRate || 115200); }
+    if (databitsSelect) { databitsSelect.value = String(config.dataBits || 8); }
+    if (paritySelect) { paritySelect.value = config.parity || 'none'; }
+    if (stopbitsSelect) { stopbitsSelect.value = String(config.stopBits || 1); }
+    if (lineEndingSelect) { lineEndingSelect.value = config.lineEnding || 'none'; }
+    if (optTimestamp) { optTimestamp.checked = !!config.showTimestamp; }
+    if (optHex) { optHex.checked = !!config.hexMode; }
+  }
 
-  // Ctrl+Enter = 发送，Enter = 换行（textarea 默认行为）
-  sendInput?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-      e.preventDefault();
-      doSend();
+  function persistCurrentConfigDraft() {
+    vscode.postMessage({ type: 'saveConfig', config: collectCurrentConfig() });
+  }
+
+  function buildProfileDefaultName(config) {
+    return config.port ? `${config.port} @ ${config.baudRate}` : `Profile ${serialProfiles.length + 1}`;
+  }
+
+  function persistProfiles() {
+    vscode.postMessage({ type: 'saveSerialProfiles', profiles: serialProfiles });
+  }
+
+  function renderProfiles(selectedId) {
+    if (!profileSelect) {
+      return;
     }
-  });
 
-  // 输入内容变化时保存状态
-  sendInput?.addEventListener('input', saveState);
+    const currentSelection = selectedId || profileSelect.value || '';
+    profileSelect.innerHTML = '<option value="">-- Profiles --</option>';
+    serialProfiles.forEach((profile) => {
+      const option = document.createElement('option');
+      option.value = profile.id;
+      option.textContent = profile.name;
+      profileSelect.appendChild(option);
+    });
+    profileSelect.value = currentSelection;
+  }
 
-  // ---- 自定义 History 下拉 ----
+  function persistQuickCommands() {
+    vscode.postMessage({ type: 'saveQuickCommands', commands: quickCommands });
+  }
 
-  // 点击 toggle 展开/收起
-  historyToggle?.addEventListener('click', () => {
-    historyDropdown?.classList.toggle('open');
-  });
+  function renderQuickCommands() {
+    renderQuickCommandButtons();
+    renderQuickCommandManager();
+  }
 
-  // 点击外部关闭下拉
-  document.addEventListener('click', (e) => {
-    if (historyDropdown && !historyDropdown.contains(/** @type {Node} */ (e.target))) {
-      historyDropdown.classList.remove('open');
+  function renderQuickCommandButtons() {
+    if (!quickCommandList) {
+      return;
     }
-  });
 
-  /** 更新 History 自定义下拉列表（含删除按钮） */
+    quickCommandList.innerHTML = '';
+    if (quickCommands.length === 0) {
+      const hint = document.createElement('div');
+      hint.className = 'quick-command-empty';
+      hint.textContent = 'Add quick commands below for one-click send.';
+      quickCommandList.appendChild(hint);
+      return;
+    }
+
+    quickCommands.forEach((command) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'quick-command-chip';
+      button.textContent = command.label;
+      button.title = command.value;
+      button.addEventListener('click', () => {
+        sendData(command.value, !!command.hexSend);
+      });
+      quickCommandList.appendChild(button);
+    });
+  }
+
+  function renderQuickCommandManager() {
+    if (!quickCommandManageList) {
+      return;
+    }
+
+    quickCommandManageList.innerHTML = '';
+
+    quickCommands.forEach((command) => {
+      const row = document.createElement('div');
+      row.className = 'quick-command-manage-item';
+
+      const meta = document.createElement('div');
+      meta.className = 'quick-command-manage-meta';
+      meta.textContent = `${command.label} · ${command.hexSend ? 'HEX' : 'Text'} · ${command.value}`;
+
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.className = 'btn-secondary btn-compact';
+      editBtn.textContent = 'Edit';
+      editBtn.addEventListener('click', () => {
+        editingQuickCommandId = command.id;
+        if (quickCommandLabelInput) { quickCommandLabelInput.value = command.label; }
+        if (quickCommandValueInput) { quickCommandValueInput.value = command.value; }
+        if (quickCommandHexInput) { quickCommandHexInput.checked = !!command.hexSend; }
+      });
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.type = 'button';
+      deleteBtn.className = 'btn-secondary btn-compact';
+      deleteBtn.textContent = 'Delete';
+      deleteBtn.addEventListener('click', () => {
+        quickCommands = quickCommands.filter((item) => item.id !== command.id);
+        persistQuickCommands();
+        renderQuickCommands();
+        if (editingQuickCommandId === command.id) {
+          resetQuickCommandForm();
+        }
+      });
+
+      row.appendChild(meta);
+      row.appendChild(editBtn);
+      row.appendChild(deleteBtn);
+      quickCommandManageList.appendChild(row);
+    });
+  }
+
+  function resetQuickCommandForm() {
+    editingQuickCommandId = '';
+    if (quickCommandLabelInput) { quickCommandLabelInput.value = ''; }
+    if (quickCommandValueInput) { quickCommandValueInput.value = ''; }
+    if (quickCommandHexInput) { quickCommandHexInput.checked = false; }
+  }
+
+  function createId(prefix) {
+    return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+  }
+
+  function updateSendPlaceholder() {
+    if (!sendInput) {
+      return;
+    }
+    sendInput.placeholder = optHexSend?.checked
+      ? 'HEX: 41 42 0D 0A (Ctrl+Enter to send)'
+      : 'Send data... (Ctrl+Enter to send)';
+  }
+
+  function doSend() {
+    const text = sendInput?.value || '';
+    if (!text.trim()) {
+      return;
+    }
+    sendData(text, !!optHexSend?.checked);
+    sendInput?.select();
+  }
+
+  function sendData(text, hexSend) {
+    if (!connected) {
+      return;
+    }
+    vscode.postMessage({ type: 'sendData', text, hexSend });
+
+    if (optEcho?.checked) {
+      appendLogEntry(`TX>> ${text}`, 'echo');
+    }
+
+    const historyIndex = sendHistory.indexOf(text);
+    if (historyIndex !== -1) {
+      sendHistory.splice(historyIndex, 1);
+    }
+    sendHistory.unshift(text);
+    if (sendHistory.length > MAX_HISTORY) {
+      sendHistory.pop();
+    }
+    updateHistorySelect();
+    vscode.postMessage({ type: 'saveSendHistory', history: sendHistory });
+    saveState();
+  }
+
   function updateHistorySelect() {
-    if (!historyMenu) { return; }
-    historyMenu.innerHTML = '';
+    if (!historyMenu) {
+      return;
+    }
 
+    historyMenu.innerHTML = '';
     if (sendHistory.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'history-empty';
@@ -293,7 +649,7 @@
       return;
     }
 
-    sendHistory.forEach((item, idx) => {
+    sendHistory.forEach((item, index) => {
       const row = document.createElement('div');
       row.className = 'history-item';
 
@@ -310,75 +666,159 @@
         historyDropdown?.classList.remove('open');
       });
 
-      const delBtn = document.createElement('button');
-      delBtn.className = 'history-delete';
-      delBtn.textContent = '\u00d7';
-      delBtn.title = 'Delete this entry';
-      delBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        sendHistory.splice(idx, 1);
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'history-delete';
+      deleteBtn.textContent = '\u00d7';
+      deleteBtn.title = 'Delete this entry';
+      deleteBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        sendHistory.splice(index, 1);
         updateHistorySelect();
         vscode.postMessage({ type: 'saveSendHistory', history: sendHistory });
       });
 
       row.appendChild(textSpan);
-      row.appendChild(delBtn);
+      row.appendChild(deleteBtn);
       historyMenu.appendChild(row);
     });
   }
 
-  /** 格式化字节数
-   *  @param {number} n */
-  function formatBytes(n) {
-    if (n < 1024) { return n + ' B'; }
-    if (n < 1048576) { return (n / 1024).toFixed(1) + ' KB'; }
-    return (n / 1048576).toFixed(1) + ' MB';
+  function appendLogEntry(text, kind) {
+    logEntries.push({ text, kind });
+    if (logEntries.length > MAX_RENDER_ENTRIES) {
+      logEntries = logEntries.slice(logEntries.length - MAX_RENDER_ENTRIES);
+    }
+
+    if (!frozenLog) {
+      renderLogArea();
+    } else {
+      updateEmptyState();
+    }
   }
 
-  // ============================================================
-  // 接收来自 Extension Host 的消息
-  // ============================================================
+  function renderLogArea() {
+    if (!logArea) {
+      return;
+    }
+
+    logArea.innerHTML = '';
+
+    const visibleEntries = getVisibleEntries();
+    visibleEntries.forEach((entry) => {
+      const line = document.createElement('div');
+      line.className = entry.kind === 'echo' ? 'log-line log-echo' : 'log-line';
+      line.textContent = entry.text;
+      logArea.appendChild(line);
+    });
+
+    updateEmptyState();
+    if (optAutoScroll?.checked && !frozenLog) {
+      scrollLogToBottom();
+    }
+  }
+
+  function getVisibleEntries() {
+    if (!activeLogFilter) {
+      return logEntries;
+    }
+    return logEntries.filter((entry) => entry.text.toLowerCase().includes(activeLogFilter));
+  }
+
+  function getVisibleLogText() {
+    return getVisibleEntries().map((entry) => entry.text).join('\n');
+  }
+
+  function updateEmptyState() {
+    if (!logEmptyState) {
+      return;
+    }
+
+    const hasEntries = getVisibleEntries().length > 0;
+    logEmptyState.classList.toggle('hidden', hasEntries);
+    if (hasEntries) {
+      return;
+    }
+
+    const title = logEmptyState.querySelector('.empty-state-title');
+    const text = logEmptyState.querySelector('.empty-state-text');
+    if (!(title && text)) {
+      return;
+    }
+
+    if (activeLogFilter) {
+      title.textContent = 'No matching logs';
+      text.textContent = 'Try a different keyword or clear the filter to see the full capture.';
+      return;
+    }
+
+    if (connected) {
+      title.textContent = 'Waiting for serial output';
+      text.textContent = 'The target is connected. Send a command or run Build+Flash to populate the log stream.';
+      return;
+    }
+
+    title.textContent = 'Ready for serial debugging';
+    text.textContent = 'Select a port, open the connection, or run Build+Flash to capture fresh boot logs.';
+  }
+
+  function updateFreezeButton() {
+    if (!freezeBtn) {
+      return;
+    }
+    freezeBtn.textContent = frozenLog ? 'Resume' : 'Freeze';
+    freezeBtn.classList.toggle('btn-primary', frozenLog);
+    freezeBtn.classList.toggle('btn-secondary', !frozenLog);
+  }
+
+  function scrollLogToBottom() {
+    if (!logArea) {
+      return;
+    }
+    logArea.scrollTop = logArea.scrollHeight;
+  }
+
+  function formatBytes(bytes) {
+    if (bytes < 1024) { return bytes + ' B'; }
+    if (bytes < 1048576) { return (bytes / 1024).toFixed(1) + ' KB'; }
+    return (bytes / 1048576).toFixed(1) + ' MB';
+  }
 
   window.addEventListener('message', (event) => {
     const message = event.data;
 
     switch (message.type) {
-
-      // 更新串口列表
       case 'updatePorts': {
         if (!portSelect) { break; }
-        const prevValue = portSelect.value || pendingPort;
+        const previousValue = portSelect.value || pendingPort;
         portSelect.innerHTML = '';
-        const ports = message.ports || [];
 
+        const ports = message.ports || [];
         if (ports.length === 0) {
-          const opt = document.createElement('option');
-          opt.value = '';
-          opt.textContent = '-- No ports found --';
-          portSelect.appendChild(opt);
+          const option = document.createElement('option');
+          option.value = '';
+          option.textContent = '-- No ports found --';
+          portSelect.appendChild(option);
         } else {
-          ports.forEach((/** @type {any} */ p) => {
-            const opt = document.createElement('option');
-            opt.value = p.path;
-            let label = p.path;
-            if (p.manufacturer) { label += ' - ' + p.manufacturer; }
-            if (p.vendorId) { label += ' (VID:' + p.vendorId + ')'; }
-            opt.textContent = label;
-            portSelect.appendChild(opt);
+          ports.forEach((port) => {
+            const option = document.createElement('option');
+            option.value = port.path;
+            let label = port.path;
+            if (port.manufacturer) { label += ' - ' + port.manufacturer; }
+            if (port.vendorId) { label += ' (VID:' + port.vendorId + ')'; }
+            option.textContent = label;
+            portSelect.appendChild(option);
           });
         }
 
-        if (prevValue) {
-          portSelect.value = prevValue;
+        if (previousValue) {
+          portSelect.value = previousValue;
           pendingPort = '';
         }
         break;
       }
 
-      // 更新连接状态
       case 'updateStatus': {
         connected = !!message.connected;
-
         if (statusDot) {
           statusDot.className = connected
             ? 'status-indicator status-connected'
@@ -386,7 +826,7 @@
         }
         if (statusText) {
           statusText.textContent = connected
-            ? message.port + ' @ ' + message.baudRate
+            ? `${message.port} @ ${message.baudRate}`
             : 'Disconnected';
         }
         if (connectBtn) {
@@ -394,110 +834,85 @@
           connectBtn.className = connected ? 'btn-danger' : 'btn-primary';
         }
 
-        if (portSelect)      { portSelect.disabled = connected; }
-        if (baudrateInput)   { baudrateInput.disabled = connected; }
-        if (databitsSelect)  { databitsSelect.disabled = connected; }
-        if (paritySelect)    { paritySelect.disabled = connected; }
-        if (stopbitsSelect)  { stopbitsSelect.disabled = connected; }
-        if (sendInput)       { sendInput.disabled = !connected; }
-        if (sendBtn)         { sendBtn.disabled = !connected; }
+        [portSelect, baudrateInput, databitsSelect, paritySelect, stopbitsSelect].forEach((element) => {
+          if (element) { element.disabled = connected; }
+        });
+        if (sendInput) { sendInput.disabled = !connected; }
+        if (sendBtn) { sendBtn.disabled = !connected; }
+        updateEmptyState();
         break;
       }
 
-      // 追加日志
       case 'appendLog': {
-        if (!logArea) { break; }
-        // H3: MCP TX>> 行使用 Echo 样式（绿色斜体），与用户手动发送的 TX>> 一致
         if (message.text && message.text.startsWith('MCP TX>> ')) {
-          const echoSpan = document.createElement('span');
-          echoSpan.className = 'log-echo';
-          echoSpan.textContent = message.text;
-          logArea.appendChild(echoSpan);
+          appendLogEntry(message.text.trimEnd(), 'echo');
         } else {
-          logArea.insertAdjacentText('beforeend', message.text);
+          const chunks = String(message.text || '')
+            .split('\n')
+            .map((line) => line.trimEnd())
+            .filter((line) => line.length > 0);
+          chunks.forEach((line) => appendLogEntry(line, 'text'));
         }
-        // 按实际换行数累加
-        const newLines = (message.text.match(/\n/g) || []).length;
-        displayLineCount += Math.max(newLines, 1);
-
-        if (displayLineCount > MAX_DISPLAY_LINES) {
-          // 按子节点移除旧内容，保留 <span> Echo 样式
-          const excess = displayLineCount - MAX_DISPLAY_LINES;
-          let removed = 0;
-          while (removed < excess && logArea.firstChild) {
-            const node = logArea.firstChild;
-            const nodeText = node.textContent || '';
-            const nodeLines = (nodeText.match(/\n/g) || []).length;
-            if (removed + Math.max(nodeLines, 1) <= excess) {
-              removed += Math.max(nodeLines, 1);
-              logArea.removeChild(node);
-            } else {
-              // 部分裁剪文本节点
-              if (node.nodeType === Node.TEXT_NODE) {
-                const parts = nodeText.split('\n');
-                const keep = parts.slice(excess - removed);
-                node.textContent = keep.join('\n');
-                removed = excess;
-              } else {
-                break;
-              }
-            }
-          }
-          displayLineCount = MAX_DISPLAY_LINES;
-        }
-
-        logArea.scrollTop = logArea.scrollHeight;
         break;
       }
 
-      // 清空日志
       case 'clearLog': {
-        if (logArea) { logArea.textContent = ''; displayLineCount = 0; }
+        logEntries = [];
+        renderLogArea();
         if (rxCountEl) { rxCountEl.textContent = 'RX: 0'; }
         if (txCountEl) { txCountEl.textContent = 'TX: 0'; }
         break;
       }
 
-      // 更新 RX/TX 字节计数
       case 'updateCounters': {
         if (rxCountEl) { rxCountEl.textContent = 'RX: ' + formatBytes(message.rx); }
         if (txCountEl) { txCountEl.textContent = 'TX: ' + formatBytes(message.tx); }
         break;
       }
 
-      // 恢复持久化配置
       case 'restoreConfig': {
-        const cfg = message.config;
-        if (cfg) {
-          if (baudrateInput)   { baudrateInput.value = String(cfg.baudRate || 115200); }
-          if (databitsSelect)  { databitsSelect.value = String(cfg.dataBits || 8); }
-          if (paritySelect)    { paritySelect.value = cfg.parity || 'none'; }
-          if (stopbitsSelect)  { stopbitsSelect.value = String(cfg.stopBits || 1); }
-          if (optTimestamp)     { optTimestamp.checked = !!cfg.showTimestamp; }
-          if (optHex)          { optHex.checked = !!cfg.hexMode; }
-          if (lineEndingSelect) { lineEndingSelect.value = cfg.lineEnding || 'lf'; }
-          if (cfg.port) { pendingPort = cfg.port; }
+        const config = message.config;
+        if (config) {
+          applyConfigToInputs(config);
+          if (config.port) {
+            pendingPort = config.port;
+          }
         }
-        if (message.sendHistory && Array.isArray(message.sendHistory)) {
+
+        if (Array.isArray(message.sendHistory)) {
           sendHistory = message.sendHistory;
           updateHistorySelect();
         }
+        if (Array.isArray(message.serialProfiles)) {
+          serialProfiles = message.serialProfiles;
+          renderProfiles('');
+        }
+        if (Array.isArray(message.quickCommands)) {
+          quickCommands = message.quickCommands;
+          renderQuickCommands();
+        } else {
+          renderQuickCommands();
+        }
+        updateEmptyState();
         break;
       }
 
       case 'keilBusy': {
         const busy = !!message.busy;
-        if (keilBuildBtn) { keilBuildBtn.disabled = busy; }
-        if (keilFlashBtn) { keilFlashBtn.disabled = busy; }
-        if (keilBuildFlashBtn) { keilBuildFlashBtn.disabled = busy; }
-        if (keilCpuBtn) { keilCpuBtn.disabled = busy; }
-        if (keilConfigBtn) { keilConfigBtn.disabled = busy; }
+        [keilBuildBtn, keilFlashBtn, keilBuildFlashBtn, keilCpuBtn, keilConfigBtn].forEach((element) => {
+          if (element) { element.disabled = busy; }
+        });
         if (keilStatusEl) {
           const taskName = message.task || 'Task';
-          keilStatusEl.textContent = busy ? ('Keil: Running ' + taskName + '...') : 'Keil: Idle';
+          keilStatusEl.textContent = busy ? `Keil: Running ${taskName}...` : 'Keil: Idle';
         }
         break;
       }
     }
   });
+
+  renderQuickCommands();
+  updateHistorySelect();
+  updateFreezeButton();
+  updateEmptyState();
 })();

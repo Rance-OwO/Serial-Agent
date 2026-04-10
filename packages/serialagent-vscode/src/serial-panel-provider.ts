@@ -10,6 +10,21 @@ const DEFAULT_BAUDRATES = [
 ];
 
 const MAX_SEND_HISTORY = 20;
+const MAX_SERIAL_PROFILES = 10;
+const MAX_QUICK_COMMANDS = 12;
+
+interface SerialProfile {
+  id: string;
+  name: string;
+  config: SerialConfig;
+}
+
+interface QuickCommand {
+  id: string;
+  label: string;
+  value: string;
+  hexSend?: boolean;
+}
 
 export class SerialPanelProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'serialagent.serialPanel';
@@ -85,6 +100,41 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
     return this._context.globalState.get<string[]>('sendHistory', []);
   }
 
+  private _saveSerialProfiles(profiles: SerialProfile[]): void {
+    void this._context.globalState.update('serialProfiles', profiles.slice(0, MAX_SERIAL_PROFILES));
+  }
+
+  private _loadSerialProfiles(): SerialProfile[] {
+    return this._context.globalState.get<SerialProfile[]>('serialProfiles', []);
+  }
+
+  private _saveQuickCommands(commands: QuickCommand[]): void {
+    void this._context.globalState.update('quickCommands', commands.slice(0, MAX_QUICK_COMMANDS));
+  }
+
+  private _loadQuickCommands(): QuickCommand[] {
+    return this._context.globalState.get<QuickCommand[]>('quickCommands', []);
+  }
+
+  private async _saveLogToFile(logLines: string[]): Promise<void> {
+    const target = await vscode.window.showSaveDialog({
+      saveLabel: 'Save Serial Log',
+      filters: {
+        'Log Files': ['log', 'txt'],
+        'All Files': ['*'],
+      },
+      defaultUri: vscode.Uri.file(`serial-agent-${Date.now()}.log`),
+    });
+
+    if (!target) {
+      return;
+    }
+
+    const content = logLines.join('\n');
+    await vscode.workspace.fs.writeFile(target, Buffer.from(content, 'utf8'));
+    vscode.window.showInformationMessage(`[Serial Agent] Log saved: ${target.fsPath}`);
+  }
+
   private _initializeView(webview: vscode.Webview): void {
     const savedConfig = this._loadConfig();
     this._serialManager.updateSettings(savedConfig);
@@ -122,6 +172,8 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
       type: 'restoreConfig',
       config: savedConfig,
       sendHistory: this._loadSendHistory(),
+      serialProfiles: this._loadSerialProfiles(),
+      quickCommands: this._loadQuickCommands(),
     });
 
     if (this._serialManager.isConnected) {
@@ -209,8 +261,23 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
           break;
         }
 
+        case 'saveSerialProfiles': {
+          this._saveSerialProfiles(data.profiles ?? []);
+          break;
+        }
+
+        case 'saveQuickCommands': {
+          this._saveQuickCommands(data.commands ?? []);
+          break;
+        }
+
         case 'saveConfig': {
           if (data.config) { this._saveConfig(data.config); }
+          break;
+        }
+
+        case 'saveLogToFile': {
+          await this._saveLogToFile(data.lines ?? []);
           break;
         }
 
@@ -272,7 +339,22 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
     <span id="tx-count" class="counter" title="Sent bytes">TX: 0</span>
   </div>
 
-  <div class="config-section">
+  <div class="section-block section-block-serial">
+    <div class="section-heading">
+      <span class="section-title">Serial</span>
+      <span class="section-subtitle">Connect and prepare your target</span>
+    </div>
+
+    <div class="profile-bar">
+      <select id="profile-select" class="profile-select" title="Saved serial profiles">
+        <option value="">-- Profiles --</option>
+      </select>
+      <input id="profile-name" class="profile-name-input" type="text" placeholder="Profile name" />
+      <button id="btn-profile-save" class="btn-secondary btn-compact">Save</button>
+      <button id="btn-profile-delete" class="btn-secondary btn-compact">Delete</button>
+    </div>
+
+    <div class="config-section">
     <div class="config-row">
       <label>Port</label>
       <div class="config-control">
@@ -323,43 +405,96 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
         </select>
       </div>
     </details>
+    </div>
+
+    <div class="action-bar">
+      <button id="btn-connect" class="btn-primary">Open</button>
+      <button id="btn-clear" class="btn-secondary">Clear</button>
+    </div>
   </div>
 
-  <div class="action-bar">
-    <button id="btn-connect" class="btn-primary">Open</button>
-    <button id="btn-clear" class="btn-secondary">Clear</button>
+  <div class="section-block section-block-firmware">
+    <div class="section-heading">
+      <span class="section-title">Firmware Actions</span>
+      <span class="section-subtitle">Build and flash without leaving the serial workspace</span>
+    </div>
+    <div class="action-bar firmware-bar">
+      <button id="btn-keil-build" class="btn-secondary">Build</button>
+      <button id="btn-keil-flash" class="btn-secondary">Flash</button>
+      <button id="btn-keil-build-flash" class="btn-primary">Build+Flash</button>
+      <button id="btn-keil-cpu" class="btn-secondary">CPU Name</button>
+      <button id="btn-keil-config" class="btn-secondary">Keil Config</button>
+    </div>
+    <div id="keil-status" class="keil-status">Keil: Idle</div>
   </div>
 
-  <div class="action-bar" style="margin-top: 6px;">
-    <button id="btn-keil-build" class="btn-secondary">Build</button>
-    <button id="btn-keil-flash" class="btn-secondary">Flash</button>
-    <button id="btn-keil-build-flash" class="btn-primary">Build+Flash</button>
-    <button id="btn-keil-cpu" class="btn-secondary">CPU Name</button>
-    <button id="btn-keil-config" class="btn-secondary">Keil Config</button>
-  </div>
-  <div id="keil-status" style="font-size: 11px; opacity: 0.85; margin: 4px 2px 0;">Keil: Idle</div>
+  <div class="section-block section-block-log">
+    <div class="section-heading">
+      <span class="section-title">Logs</span>
+      <span class="section-subtitle">Observe boot output, filter noise, and capture evidence</span>
+    </div>
 
-  <div class="options-bar">
-    <label class="option-item" title="Show timestamp on each line">
-      <input type="checkbox" id="opt-timestamp" />
-      <span>Time</span>
-    </label>
-    <label class="option-item" title="HEX display mode (received data)">
-      <input type="checkbox" id="opt-hex" />
-      <span>HEX Recv</span>
-    </label>
-    <label class="option-item" title="Echo sent data in log area">
-      <input type="checkbox" id="opt-echo" checked />
-      <span>Echo</span>
-    </label>
+    <div class="log-toolbar">
+      <input id="log-search" class="log-search-input" type="text" placeholder="Search or filter logs" />
+      <label class="option-item option-item-inline" title="Follow the latest log lines automatically">
+        <input type="checkbox" id="opt-auto-scroll" checked />
+        <span>Auto Scroll</span>
+      </label>
+      <button id="btn-freeze" class="btn-secondary btn-compact" type="button">Freeze</button>
+      <button id="btn-copy-log" class="btn-secondary btn-compact" type="button">Copy</button>
+      <button id="btn-save-log" class="btn-secondary btn-compact" type="button">Save</button>
+    </div>
+
+    <div class="options-bar">
+      <label class="option-item" title="Show timestamp on each line">
+        <input type="checkbox" id="opt-timestamp" />
+        <span>Time</span>
+      </label>
+      <label class="option-item" title="HEX display mode (received data)">
+        <input type="checkbox" id="opt-hex" />
+        <span>HEX Recv</span>
+      </label>
+      <label class="option-item" title="Echo sent data in log area">
+        <input type="checkbox" id="opt-echo" checked />
+        <span>Echo</span>
+      </label>
+    </div>
   </div>
 
   <div class="content-wrapper">
     <div class="log-section">
+      <div id="log-empty-state" class="empty-state">
+        <div class="empty-state-title">Ready for serial debugging</div>
+        <div class="empty-state-text">Select a port, open the connection, or run Build+Flash to capture fresh boot logs.</div>
+      </div>
       <div id="log-area" class="log-area"></div>
     </div>
     <div id="resize-handle" class="resize-handle" title="Drag to resize"></div>
     <div class="send-section" id="send-section">
+      <div class="section-heading section-heading-send">
+        <span class="section-title">Send</span>
+        <span class="section-subtitle">Reuse commands and drive the target faster</span>
+      </div>
+
+      <div class="quick-command-bar">
+        <div id="quick-command-list" class="quick-command-list"></div>
+      </div>
+
+      <details id="quick-command-editor" class="quick-command-editor">
+        <summary>Manage Quick Commands</summary>
+        <div class="quick-command-form">
+          <input id="quick-command-label" class="quick-command-input" type="text" placeholder="Label" />
+          <input id="quick-command-value" class="quick-command-input quick-command-value" type="text" placeholder="Command value" />
+          <label class="option-item option-item-inline" title="Send the quick command as HEX bytes">
+            <input type="checkbox" id="quick-command-hex" />
+            <span>HEX</span>
+          </label>
+          <button id="btn-quick-command-save" class="btn-secondary btn-compact" type="button">Save</button>
+          <button id="btn-quick-command-reset" class="btn-secondary btn-compact" type="button">Reset</button>
+        </div>
+        <div id="quick-command-manage-list" class="quick-command-manage-list"></div>
+      </details>
+
       <div class="send-options-row">
         <label class="option-item" title="Send data as HEX bytes">
           <input type="checkbox" id="opt-hex-send" />
