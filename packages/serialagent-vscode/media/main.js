@@ -18,19 +18,6 @@
   const MAX_RENDER_ENTRIES = 5000;
 
   /**
-   * @typedef {{ id: string; name: string; config: {
-   *   port: string;
-   *   baudRate: number;
-   *   dataBits: number;
-   *   parity: string;
-   *   stopBits: number;
-   *   lineEnding: string;
-   *   showTimestamp: boolean;
-   *   hexMode: boolean;
-   * } }} SerialProfile
-   */
-
-  /**
    * @typedef {{ id: string; label: string; value: string; hexSend?: boolean }} QuickCommand
    */
 
@@ -96,13 +83,6 @@
   const sendSection = document.getElementById('send-section');
   const contentWrapper = document.querySelector('.content-wrapper');
 
-  /** @type {HTMLSelectElement | null} */
-  const profileSelect = /** @type {HTMLSelectElement} */ (document.getElementById('profile-select'));
-  /** @type {HTMLInputElement | null} */
-  const profileNameInput = /** @type {HTMLInputElement} */ (document.getElementById('profile-name'));
-  const profileSaveBtn = document.getElementById('btn-profile-save');
-  const profileDeleteBtn = document.getElementById('btn-profile-delete');
-
   const quickCommandList = document.getElementById('quick-command-list');
   const quickCommandManageList = document.getElementById('quick-command-manage-list');
   /** @type {HTMLInputElement | null} */
@@ -117,7 +97,6 @@
   let connected = false;
   let pendingPort = '';
   let sendHistory = /** @type {string[]} */ ([]);
-  let serialProfiles = /** @type {SerialProfile[]} */ ([]);
   let quickCommands = /** @type {QuickCommand[]} */ ([]);
   let editingQuickCommandId = '';
   let frozenLog = false;
@@ -129,7 +108,6 @@
   bindSerialActions();
   bindLogActions();
   bindSendActions();
-  bindProfileActions();
   bindQuickCommandActions();
   bindResizeActions();
 
@@ -313,58 +291,6 @@
     });
   }
 
-  function bindProfileActions() {
-    profileSelect?.addEventListener('change', () => {
-      const selected = serialProfiles.find((profile) => profile.id === profileSelect.value);
-      if (!selected) {
-        if (profileNameInput) {
-          profileNameInput.value = '';
-        }
-        return;
-      }
-
-      if (profileNameInput) {
-        profileNameInput.value = selected.name;
-      }
-
-      applyConfigToInputs(selected.config);
-      persistCurrentConfigDraft();
-    });
-
-    profileSaveBtn?.addEventListener('click', () => {
-      const config = collectCurrentConfig();
-      const currentName = (profileNameInput?.value || '').trim() || buildProfileDefaultName(config);
-      const selectedId = profileSelect?.value || '';
-      const existing = serialProfiles.find((profile) => profile.id === selectedId);
-
-      const profile = {
-        id: existing?.id || createId('profile'),
-        name: currentName,
-        config,
-      };
-
-      serialProfiles = existing
-        ? serialProfiles.map((item) => item.id === existing.id ? profile : item)
-        : [profile, ...serialProfiles].slice(0, 10);
-
-      persistProfiles();
-      renderProfiles(profile.id);
-    });
-
-    profileDeleteBtn?.addEventListener('click', () => {
-      const selectedId = profileSelect?.value || '';
-      if (!selectedId) {
-        return;
-      }
-      serialProfiles = serialProfiles.filter((profile) => profile.id !== selectedId);
-      persistProfiles();
-      renderProfiles('');
-      if (profileNameInput) {
-        profileNameInput.value = '';
-      }
-    });
-  }
-
   function bindQuickCommandActions() {
     quickCommandSaveBtn?.addEventListener('click', () => {
       const label = (quickCommandLabelInput?.value || '').trim();
@@ -475,30 +401,6 @@
 
   function persistCurrentConfigDraft() {
     vscode.postMessage({ type: 'saveConfig', config: collectCurrentConfig() });
-  }
-
-  function buildProfileDefaultName(config) {
-    return config.port ? `${config.port} @ ${config.baudRate}` : `Profile ${serialProfiles.length + 1}`;
-  }
-
-  function persistProfiles() {
-    vscode.postMessage({ type: 'saveSerialProfiles', profiles: serialProfiles });
-  }
-
-  function renderProfiles(selectedId) {
-    if (!profileSelect) {
-      return;
-    }
-
-    const currentSelection = selectedId || profileSelect.value || '';
-    profileSelect.innerHTML = '<option value="">-- Profiles --</option>';
-    serialProfiles.forEach((profile) => {
-      const option = document.createElement('option');
-      option.value = profile.id;
-      option.textContent = profile.name;
-      profileSelect.appendChild(option);
-    });
-    profileSelect.value = currentSelection;
   }
 
   function persistQuickCommands() {
@@ -882,10 +784,6 @@
         if (Array.isArray(message.sendHistory)) {
           sendHistory = message.sendHistory;
           updateHistorySelect();
-        }
-        if (Array.isArray(message.serialProfiles)) {
-          serialProfiles = message.serialProfiles;
-          renderProfiles('');
         }
         if (Array.isArray(message.quickCommands)) {
           quickCommands = message.quickCommands;

@@ -71,36 +71,15 @@ body {
 .section-heading {
   display: flex;
   flex-direction: column;
-  gap: 2px;
   margin-bottom: 8px;
-}
-
-.section-heading-send {
-  margin-bottom: 6px;
 }
 
 .section-title {
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--vscode-textLink-foreground, #3794ff);
+  font-size: 12px;
+  color: var(--vscode-foreground);
   font-weight: 700;
 }
 
-.section-subtitle {
-  font-size: 11px;
-  color: var(--vscode-descriptionForeground);
-}
-
-.profile-bar {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 8px;
-  align-items: center;
-}
-
-.profile-select,
-.profile-name-input,
 .log-search-input,
 .quick-command-input,
 .config-row select,
@@ -115,18 +94,6 @@ body {
   outline: none;
 }
 
-.profile-select {
-  flex: 1.2;
-  min-width: 0;
-}
-
-.profile-name-input {
-  flex: 1;
-  min-width: 0;
-}
-
-.profile-select:focus,
-.profile-name-input:focus,
 .log-search-input:focus,
 .quick-command-input:focus,
 .config-row select:focus,

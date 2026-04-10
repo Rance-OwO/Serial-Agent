@@ -341,17 +341,7 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
 
   <div class="section-block section-block-serial">
     <div class="section-heading">
-      <span class="section-title">Serial</span>
-      <span class="section-subtitle">Connect and prepare your target</span>
-    </div>
-
-    <div class="profile-bar">
-      <select id="profile-select" class="profile-select" title="Saved serial profiles">
-        <option value="">-- Profiles --</option>
-      </select>
-      <input id="profile-name" class="profile-name-input" type="text" placeholder="Profile name" />
-      <button id="btn-profile-save" class="btn-secondary btn-compact">Save</button>
-      <button id="btn-profile-delete" class="btn-secondary btn-compact">Delete</button>
+      <span class="section-title">COM Port Config</span>
     </div>
 
     <div class="config-section">
@@ -415,8 +405,7 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
 
   <div class="section-block section-block-firmware">
     <div class="section-heading">
-      <span class="section-title">Firmware Actions</span>
-      <span class="section-subtitle">Build and flash without leaving the serial workspace</span>
+      <span class="section-title">Firmware Program Config</span>
     </div>
     <div class="action-bar firmware-bar">
       <button id="btn-keil-build" class="btn-secondary">Build</button>
@@ -430,8 +419,7 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
 
   <div class="section-block section-block-log">
     <div class="section-heading">
-      <span class="section-title">Logs</span>
-      <span class="section-subtitle">Observe boot output, filter noise, and capture evidence</span>
+      <span class="section-title">Logs Config</span>
     </div>
 
     <div class="log-toolbar">
@@ -471,11 +459,6 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
     </div>
     <div id="resize-handle" class="resize-handle" title="Drag to resize"></div>
     <div class="send-section" id="send-section">
-      <div class="section-heading section-heading-send">
-        <span class="section-title">Send</span>
-        <span class="section-subtitle">Reuse commands and drive the target faster</span>
-      </div>
-
       <div class="quick-command-bar">
         <div id="quick-command-list" class="quick-command-list"></div>
       </div>
