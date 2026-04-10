@@ -451,7 +451,7 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
 
   <div class="content-wrapper">
     <div class="log-section">
-      <div id="log-empty-state" class="empty-state">Waiting for serial output...</div>
+      <div id="log-empty-state" class="empty-state">Waiting RX data...</div>
       <div id="log-area" class="log-area"></div>
     </div>
     <div id="resize-handle" class="resize-handle" title="Drag to resize"></div>

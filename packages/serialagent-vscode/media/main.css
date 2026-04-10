@@ -356,18 +356,18 @@ body {
   position: absolute;
   inset: 0;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 10px 12px;
   background: transparent;
   border: none;
   border-radius: 0;
   z-index: 1;
   pointer-events: none;
   color: var(--vscode-descriptionForeground);
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.4;
-  text-align: center;
+  text-align: left;
 }
 
 .empty-state.hidden {

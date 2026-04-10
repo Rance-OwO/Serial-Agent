@@ -19,6 +19,7 @@ interface RawSerialPortInfo {
   vendorId?: string;
   serialNumber?: string;
   pnpId?: string;
+  friendlyName?: string;
 }
 
 interface WindowsPortMetadata {
@@ -101,8 +102,8 @@ export class SerialManager implements SerialRuntime {
         vendorId: port.vendorId,
         serialNumber: port.serialNumber,
         pnpId: port.pnpId ?? metadata?.pnpId,
-        friendlyName: metadata?.friendlyName,
-        driverLabel: metadata?.driverLabel,
+        friendlyName: port.friendlyName ?? metadata?.friendlyName,
+        driverLabel: metadata?.driverLabel ?? normalizeDriverLabel(port.friendlyName),
       };
     });
   }
@@ -364,6 +365,19 @@ export class SerialManager implements SerialRuntime {
     }
     this._reconnecting = false;
   }
+}
+
+function normalizeDriverLabel(label?: string): string | undefined {
+  if (!label) {
+    return undefined;
+  }
+
+  const normalized = label
+    .replace(/\s*\((COM\d+)\)\s*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return normalized.length > 0 ? normalized : undefined;
 }
 
 async function loadWindowsPortMetadata(): Promise<Map<string, WindowsPortMetadata>> {

@@ -642,16 +642,16 @@
     }
 
     if (activeLogFilter) {
-      logEmptyState.textContent = 'No matching logs.';
+      logEmptyState.textContent = 'Waiting RX data...';
       return;
     }
 
     if (connected) {
-      logEmptyState.textContent = 'Waiting for serial output...';
+      logEmptyState.textContent = 'Waiting RX data...';
       return;
     }
 
-    logEmptyState.textContent = 'Open a COM port to start reading logs.';
+    logEmptyState.textContent = 'Waiting RX data...';
   }
 
   function updateFreezeButton() {
