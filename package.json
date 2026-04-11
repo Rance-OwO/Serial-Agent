@@ -1,8 +1,8 @@
 {
-  "name": "serialagent",
+  "name": "serial-agent-monorepo",
   "version": "1.0.1",
   "private": true,
-  "description": "AI-powered embedded serial debugging agent - MCP Server + VS Code Extension",
+  "description": "Serial Agent monorepo - VS Code extension, MCP server, and skill source",
   "workspaces": [
     "packages/serialagent-mcp",
     "packages/serialagent-vscode"
