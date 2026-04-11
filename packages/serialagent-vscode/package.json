@@ -1,18 +1,43 @@
 {
   "name": "serialagent-vscode",
   "displayName": "Serial Agent",
-  "description": "AI-powered embedded serial debugging agent - let AI read serial logs, analyze issues, and form a debug loop",
+  "description": "Serial monitor, MCP bridge, and firmware actions for embedded debugging in VS Code.",
   "version": "1.1.0",
   "publisher": "serialagent",
   "license": "MIT",
   "icon": "media/SerialAgent.png",
+  "homepage": "https://github.com/Rance-OwO/Serial-Agent",
+  "bugs": {
+    "url": "https://github.com/Rance-OwO/Serial-Agent/issues"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
+  "keywords": [
+    "serial",
+    "uart",
+    "embedded",
+    "stm32",
+    "keil",
+    "jlink",
+    "mcp",
+    "debug",
+    "monitor"
+  ],
   "categories": [
     "Debuggers",
     "Other"
   ],
+  "qna": false,
+  "extensionKind": [
+    "ui"
+  ],
+  "capabilities": {
+    "virtualWorkspaces": false,
+    "untrustedWorkspaces": {
+      "supported": false
+    }
+  },
   "activationEvents": [
     "onStartupFinished"
   ],
