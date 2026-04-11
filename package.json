@@ -1,8 +1,12 @@
 {
   "name": "serial-agent-monorepo",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "private": true,
   "description": "Serial Agent monorepo - VS Code extension, MCP server, and skill source",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Rance-OwO/Serial-Agent"
+  },
   "workspaces": [
     "packages/serialagent-mcp",
     "packages/serialagent-vscode"

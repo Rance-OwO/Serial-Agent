@@ -4,6 +4,10 @@ English version: [README_EN.md](README_EN.md)
 
 Serial Agent 是一个面向嵌入式调试场景的 AI 串口调试平台。
 
+源码仓库：
+
+- <https://github.com/Rance-OwO/Serial-Agent>
+
 当前仓库是它的主开发仓与发布编排仓。它会从同一个源码仓发布 3 个强关联交付物：
 
 1. `Serial Agent` VS Code 插件

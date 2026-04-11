@@ -1,10 +1,14 @@
 {
   "name": "serial-agent-mcp",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Serial Agent MCP Server — AI-powered serial debugging tools via MCP protocol",
   "main": "./dist/index.js",
   "bin": {
     "serial-agent-mcp": "./dist/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Rance-OwO/Serial-Agent"
   },
   "scripts": {
     "build": "tsc",

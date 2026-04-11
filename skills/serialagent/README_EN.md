@@ -5,6 +5,10 @@
 The Serial Agent Skill is the workflow layer for agents that use the Serial
 Agent platform.
 
+Source repository:
+
+- <https://github.com/Rance-OwO/Serial-Agent>
+
 It is designed to help an AI client use:
 
 - the Serial Agent VS Code extension

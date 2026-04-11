@@ -4,6 +4,10 @@
 
 Serial Agent is an AI-powered embedded serial debugging platform.
 
+Source repository:
+
+- <https://github.com/Rance-OwO/Serial-Agent>
+
 It is delivered as three related artifacts from one source repository:
 
 1. `Serial Agent` VS Code extension

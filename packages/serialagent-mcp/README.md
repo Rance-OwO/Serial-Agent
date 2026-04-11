@@ -4,6 +4,10 @@ English version: [README_EN.md](README_EN.md)
 
 Serial Agent MCP 是 Serial Agent 平台的 MCP 服务端。它通过 stdio 暴露串口和固件工具，并把调用转发给 VS Code 插件启动的本地 Bridge。
 
+源码仓库：
+
+- <https://github.com/Rance-OwO/Serial-Agent>
+
 这份 README 只讲 MCP。如果你需要：
 
 - 产品总览，请看 [../../README.md](../../README.md)

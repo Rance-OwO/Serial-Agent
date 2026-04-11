@@ -9,7 +9,7 @@
 ## Naming Rules
 
 - Brand name: `Serial Agent`
-- Repository name: `serial-agent`
+- Repository URL: `https://github.com/Rance-OwO/Serial-Agent`
 - MCP client alias: `serialagent`
 - Skill directory name: `serialagent`
 

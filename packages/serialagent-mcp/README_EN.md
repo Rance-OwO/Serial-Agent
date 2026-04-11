@@ -6,6 +6,10 @@ Serial Agent MCP is the MCP server for the Serial Agent platform. It exposes
 serial and firmware tools over stdio and forwards requests to the local Bridge
 server started by the VS Code extension.
 
+Source repository:
+
+- <https://github.com/Rance-OwO/Serial-Agent>
+
 This README is intentionally MCP-focused. For the product overview and the VS
 Code extension, see:
 

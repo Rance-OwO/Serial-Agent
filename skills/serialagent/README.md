@@ -4,6 +4,10 @@ English version: [README_EN.md](README_EN.md)
 
 Serial Agent Skill 是给 AI 客户端或代理使用的工作流增强层。它帮助模型更稳定地使用：
 
+源码仓库：
+
+- <https://github.com/Rance-OwO/Serial-Agent>
+
 - `Serial Agent` VS Code 插件
 - `Serial Agent MCP`
 

@@ -2,7 +2,7 @@
   "name": "serialagent-vscode",
   "displayName": "Serial Agent",
   "description": "AI-powered embedded serial debugging agent - let AI read serial logs, analyze issues, and form a debug loop",
-  "version": "1.0.8",
+  "version": "1.1.0",
   "publisher": "serialagent",
   "license": "MIT",
   "icon": "media/SerialAgent.png",
@@ -200,7 +200,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/serialagent/serial-agent"
+    "url": "https://github.com/Rance-OwO/Serial-Agent"
   },
   "devDependencies": {
     "@types/node": "^25.3.2",

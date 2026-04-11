@@ -6,6 +6,10 @@ Serial Agent is a VS Code extension for embedded serial debugging. It provides
 a local serial workspace, a Bridge server for AI integrations, and firmware
 actions for Keil and JLink workflows.
 
+Source repository:
+
+- <https://github.com/Rance-OwO/Serial-Agent>
+
 This README is intentionally extension-focused. If you need MCP setup or skill
 usage, use the docs linked below:
 

@@ -4,6 +4,10 @@ English version: [README_EN.md](README_EN.md)
 
 Serial Agent 是一个面向嵌入式调试场景的 VS Code 插件。它提供本地串口工作台、Bridge 服务能力，以及 Keil 和 JLink 相关固件动作。
 
+源码仓库：
+
+- <https://github.com/Rance-OwO/Serial-Agent>
+
 这份 README 只讲插件本身。如果你需要：
 
 - MCP 配置，请看 [../serialagent-mcp/README.md](../serialagent-mcp/README.md)
