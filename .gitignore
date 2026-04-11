@@ -33,5 +33,5 @@ _KeilProject
 prodoc/
 .playwright-cli/
 __coding_plan/
-
+tests/
 AGENTS.md

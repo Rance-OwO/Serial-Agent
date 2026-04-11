@@ -3,7 +3,7 @@
   "displayName": "Serial Agent",
   "description": "Serial monitor, MCP bridge, and firmware actions for embedded debugging in VS Code.",
   "version": "1.1.0",
-  "publisher": "serialagent",
+  "publisher": "ranceowo",
   "license": "MIT",
   "icon": "media/SerialAgent.png",
   "homepage": "https://github.com/Rance-OwO/Serial-Agent",

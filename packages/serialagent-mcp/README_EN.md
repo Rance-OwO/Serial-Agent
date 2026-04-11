@@ -2,16 +2,16 @@
 
 中文版本：[README.md](README.md)
 
-Serial Agent MCP is the MCP server for the Serial Agent platform. It exposes
+`Serial Agent MCP` is the MCP server for the `Serial Agent` platform. It exposes
 serial and firmware tools over stdio and forwards requests to the local Bridge
-server started by the VS Code extension.
+started by the VS Code extension `Serial Agent`.
 
 Source repository:
 
 - <https://github.com/Rance-OwO/Serial-Agent>
 
-This README is intentionally MCP-focused. For the product overview and the VS
-Code extension, see:
+This README is intentionally MCP-focused. For the product overview, the VS Code
+extension, and the skill, see:
 
 - Product overview: [../../README_EN.md](../../README_EN.md)
 - VS Code extension: [../serialagent-vscode/README_EN.md](../serialagent-vscode/README_EN.md)
@@ -25,26 +25,42 @@ The real runtime chain is:
 VS Code Extension -> local Bridge -> MCP -> AI IDE
 ```
 
-The extension owns:
+This MCP is not a standalone product. It requires the VS Code extension
+`Serial Agent`. The extension owns:
 
 - serial connection state
 - buffered logs
 - Bridge lifecycle
 - Keil and JLink toolchain execution
 
-The MCP package is a stdio adapter that lets AI clients call those capabilities
-through MCP tools.
+The MCP package is the stdio adapter that lets AI clients call those
+capabilities through MCP tools.
 
 ## Package Identity
 
 - Product name: `Serial Agent MCP`
 - Client alias: `serialagent`
-- Technical package name: `serial-agent-mcp`
-
-The client alias and the npm package name are intentionally different layers.
-The alias is for client configuration. The package name is for distribution.
+- npm package: `@ranceowo/serial-agent-mcp`
+- Author: `ranceowo`
 
 ## Install And Run
+
+### Recommended: npm / npx
+
+```bash
+npx -y @ranceowo/serial-agent-mcp
+```
+
+Client config example:
+
+```json
+{
+  "type": "stdio",
+  "command": "npx",
+  "args": ["-y", "@ranceowo/serial-agent-mcp"],
+  "startup_timeout_sec": 15
+}
+```
 
 ### Local source build
 
@@ -56,22 +72,9 @@ npm --workspace packages/serialagent-mcp run build
 node packages/serialagent-mcp/dist/index.js
 ```
 
-### Client config example
-
-```json
-{
-  "args": [
-    "D:\\_Code\\__selfproject\\01-Serial Agent\\Serial Agent\\packages\\serialagent-mcp\\dist\\index.js"
-  ],
-  "command": "D:\\Program Files\\nodejs\\node.exe",
-  "startup_timeout_sec": 15,
-  "type": "stdio"
-}
-```
-
 ## Dependency On The Extension
 
-This MCP server requires the VS Code extension Bridge to be running. The
+This MCP server requires the Bridge started by the VS Code extension. The
 discovery file is expected at:
 
 ```text
@@ -98,28 +101,22 @@ Current tool surface:
 12. `flash_keil_firmware`
 13. `build_and_flash_keil`
 
-## Permission Model
-
-The MCP server does not decide whether a client asks for confirmation. That is
-still client-side policy. The server helps reduce permission friction by making
-tool descriptions and risk boundaries explicit.
-
-Tool categories:
-
-- `Read / Observe`
-- `Operate`
-- `External / Side-effectful`
-
-## Distribution Plan
+## Distribution Order
 
 Recommended public distribution order:
 
-1. Publish the VS Code extension
-2. Publish this MCP package to npm
-3. Register metadata in the MCP Registry
+1. Publish the VS Code extension `Serial Agent`
+2. Publish the npm package `@ranceowo/serial-agent-mcp`
+3. Add MCP Registry metadata later
 
 ## Maintainer Notes
 
 - Entry point: `src/index.ts`
 - Build output: `dist/index.js`
-- When publishing to npm, this package must not remain `private: true`
+- Before publishing, run:
+
+```bash
+npm --workspace packages/serialagent-mcp run build
+cd packages/serialagent-mcp
+npm pack --dry-run
+```

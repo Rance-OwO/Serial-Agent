@@ -2,47 +2,97 @@
 
 English version: [README_EN.md](README_EN.md)
 
-Serial Agent 是一个面向嵌入式调试场景的 AI 串口调试平台。
+`Serial Agent` 是一个面向嵌入式闭环调试场景的 AI 串口调试平台。它把 VS Code 插件、MCP 和 Skill 串成一条可复用的工作流，让你能把“看日志、发命令、分析问题、执行固件动作”交给 AI 和开发者协同完成。
 
-源码仓库：
 
-- <https://github.com/Rance-OwO/Serial-Agent>
+## 这个项目能做到什么
 
-当前仓库是它的主开发仓与发布编排仓。它会从同一个源码仓发布 3 个强关联交付物：
+- 在 VS Code 中提供串口工作台
+- 通过 MCP 让 AI 访问串口、日志和固件工具
+- 通过 Skill 固化嵌入式调试工作流
+- 形成 `插件 -> MCP -> Skill -> AI Agent` 的闭环调试链路
+
+## 三步快速上手
+
+### 第一步：安装 VS Code 插件 `Serial Agent`
+
+先安装 VS Code 插件 `Serial Agent`。这是整个闭环调试的运行时入口。
+
+![VS Code 插件安装](assets/vscode插件安装.png)
+
+插件文档：
+
+- [packages/serialagent-vscode/README.md](packages/serialagent-vscode/README.md)
+
+### 第二步：给 AI Agent 配置 MCP
+
+推荐使用 `CC Switch` 进行入下图 MCP 配置。  
+![CC Switch 配置MCP](assets/ccswitch配置MCP.png)
+
+如果你习惯让 AI 自己完成配置，也可以直接把下面这段提示词发给 AI：
+
+```text
+Hi，请帮我配置一个 MCP。MCP 的显示名称是 serial-agent-mcp，完整的 JSON 格式如下：
+{
+  "args": [
+    "-y",
+    "@ranceowo/serial-agent-mcp"
+  ],
+  "command": "npx",
+  "startup_timeout_sec": 15,
+  "type": "stdio"
+}
+```
+
+说明：
+
+- 这是 `Serial Agent MCP`
+- 它需要配合 VS Code 插件 `Serial Agent` 和本地 Bridge 一起使用
+
+MCP 文档：
+
+- [packages/serialagent-mcp/README.md](packages/serialagent-mcp/README.md)
+
+### 第三步：把 Skill 喂给 AI
+
+把这个 Skill 文件喂给 AI：
+
+- [skills/serialagent/SKILL.md](skills/serialagent/SKILL.md)
+
+推荐做法：
+
+- 如果你的客户端支持 skill 安装，优先用 `skill-creator` 固化这个 Skill
+- 如果当前客户端没有 skill 安装能力，也可以直接把 `SKILL.md` 内容喂给 AI
+
+完成插件、MCP 和 Skill 之后，就可以形成嵌入式闭环调试工作流。
+
+## 闭环调试是怎么工作的
+
+当这三步都完成后，你就拥有了这样一条链路：
+
+```text
+AI IDE / Agent Client
+    -> Serial Agent MCP
+    -> Local Bridge
+    -> Serial Agent VS Code Extension
+    -> Serial Device / Firmware Toolchain
+```
+
+这意味着 AI 不只是“读说明文档”，而是能够真正参与：
+
+- 读取串口状态
+- 观察 RX 日志
+- 发送 TX 命令
+- 调用 Keil / JLink 动作
+- 基于证据形成调试结论
+
+## 项目源码介绍
+
+当前仓库会从同一个源码仓发布 3 个强关联交付物：
 
 1. `Serial Agent` VS Code 插件
 2. `Serial Agent MCP`
 3. `Serial Agent Skill`
-
-## 为什么是 3 个交付物，但仍然保留 1 个源码仓
-
-Serial Agent 需要同时服务三种使用方式：
-
-- 人类开发者直接在 VS Code 中使用串口工作台
-- AI 客户端通过 MCP 调用串口和固件能力
-- 团队或代理通过 skill 复用同一套调试工作流
-
-当前不拆成 3 个源码仓，是因为：
-
-- 插件和 MCP 在运行时仍然强耦合
-- skill 现在是工作流增强层，不是独立运行时
-- 单仓更适合保持版本、README、issue 和架构文档同步
-
-## 从哪里开始
-
-### 我只是想调试串口
-
-先安装 VS Code 插件。
-
-### 我想让 AI 客户端接入
-
-先安装 VS Code 插件，再配置 `Serial Agent MCP`。
-
-### 我想给团队或代理一套固定工作流
-
-在插件和 MCP 之外，再安装 `Serial Agent Skill`。
-
-## 三个交付物
 
 ### 1. Serial Agent
 
@@ -85,29 +135,20 @@ Serial Agent 需要同时服务三种使用方式：
 
 - [skills/serialagent/README.md](skills/serialagent/README.md)
 
-## 它们如何协同
+## 为什么是 3 个交付物，但仍然保留 1 个源码仓
 
-```text
-AI IDE / Agent Client
-    -> Serial Agent MCP
-    -> Local Bridge
-    -> Serial Agent VS Code Extension
-    -> Serial Device / Firmware Toolchain
-```
+`Serial Agent` 需要同时服务三种使用方式：
 
-更详细的架构说明：
+- 开发者直接在 VS Code 中使用串口工作台
+- AI Agent通过 MCP 调用串口和固件能力
+- 团队或代理通过 Skill 复用同一套调试工作流
 
-- [docs/architecture.md](docs/architecture.md)
+当前不拆成 3 个源码仓，是因为：
 
-## 发布渠道
+- 插件和 MCP 在运行时仍然强耦合
+- Skill 现在是工作流增强层，不是独立运行时
+- 单仓更适合保持版本、README、Issue 和架构文档同步
 
-发布矩阵见：
-
-- [docs/release-matrix.md](docs/release-matrix.md)
-
-正式发布步骤见：
-
-- [docs/release-playbook.md](docs/release-playbook.md)
 
 ## 仓库结构
 

@@ -1,15 +1,38 @@
 {
-  "name": "serial-agent-mcp",
+  "name": "@ranceowo/serial-agent-mcp",
   "version": "1.1.0",
-  "description": "Serial Agent MCP Server — AI-powered serial debugging tools via MCP protocol",
+  "description": "MCP server for Serial Agent. Requires the Serial Agent VS Code extension and local Bridge.",
+  "author": "ranceowo",
+  "license": "MIT",
   "main": "./dist/index.js",
   "bin": {
-    "serial-agent-mcp": "./dist/index.js"
+    "serial-agent-mcp": "dist/index.js"
+  },
+  "homepage": "https://github.com/Rance-OwO/Serial-Agent",
+  "bugs": {
+    "url": "https://github.com/Rance-OwO/Serial-Agent/issues"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/Rance-OwO/Serial-Agent"
+    "url": "git+https://github.com/Rance-OwO/Serial-Agent.git"
   },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "README_EN.md"
+  ],
+  "keywords": [
+    "mcp",
+    "serial",
+    "embedded",
+    "vscode",
+    "serial-agent",
+    "stm32",
+    "bridge"
+  ],
   "scripts": {
     "build": "tsc",
     "clean": "rimraf dist",
