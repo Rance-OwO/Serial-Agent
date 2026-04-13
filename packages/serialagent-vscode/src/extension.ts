@@ -86,6 +86,26 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(keilOutputChannel);
 
   const provider = new SerialPanelProvider(context, serialManager, updateStatusBar);
+  const getConfiguredFlashMethod = (): 'jlink' | 'stlink' | 'openocd' => {
+    const configured = vscode.workspace.getConfiguration('serialagent').get<string>('flash.method', 'jlink');
+    if (configured === 'stlink') {
+      return 'stlink';
+    }
+    if (configured === 'openocd') {
+      return 'openocd';
+    }
+    return 'jlink';
+  };
+  const getConfiguredFlashLabel = (): string => {
+    const flashMethod = getConfiguredFlashMethod();
+    if (flashMethod === 'stlink') {
+      return 'ST-Link';
+    }
+    if (flashMethod === 'openocd') {
+      return 'OpenOCD';
+    }
+    return 'JLink';
+  };
 
   const withKeilTaskLock = async <T>(
     taskName: string,
@@ -141,7 +161,7 @@ export function activate(context: vscode.ExtensionContext) {
     isBusy: () => keilTaskRunning,
     checkConfig: async () => keilToolchain.checkConfig(),
     build: async () => withKeilTaskLock('Keil Build(API)', () => keilToolchain.build(), false),
-    flash: async (artifactPath?: string) => withKeilTaskLock('JLink Flash(API)', () => keilToolchain.flash(artifactPath), false),
+    flash: async (artifactPath?: string) => withKeilTaskLock(`${getConfiguredFlashLabel()} Flash(API)`, () => keilToolchain.flash(artifactPath), false),
     buildAndFlash: async () => withKeilTaskLock('Build + Flash(API)', () => keilToolchain.buildAndFlash(), false),
   });
   bridgeServer.start().then(() => {
@@ -205,6 +225,10 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('serialagent.keil.selectJlinkDevice', async () => {
+      if (getConfiguredFlashMethod() !== 'jlink') {
+        vscode.window.showWarningMessage('[Serial Agent] JLink CPU Name is only used when serialagent.flash.method = jlink.');
+        return;
+      }
       try {
         await keilToolchain.selectJLinkDeviceFromProject();
         vscode.window.showInformationMessage('[Serial Agent] JLink CPU Name updated from Keil target.');
@@ -226,9 +250,9 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('serialagent.keil.flash', async () => {
-      await runKeilTaskUi('JLink Flash', async () => {
+      await runKeilTaskUi(`${getConfiguredFlashLabel()} Flash`, async () => {
         const result = await keilToolchain.flash();
-        vscode.window.showInformationMessage(`[Serial Agent] Flash OK: ${result.artifactPath}`);
+        vscode.window.showInformationMessage(`[Serial Agent] ${(result.flasher ?? getConfiguredFlashMethod()).toUpperCase()} Flash OK: ${result.artifactPath}`);
       });
     }),
   );
@@ -237,7 +261,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('serialagent.keil.buildAndFlash', async () => {
       await runKeilTaskUi('Build + Flash', async () => {
         const result = await keilToolchain.buildAndFlash();
-        vscode.window.showInformationMessage(`[Serial Agent] Build+Flash OK: ${result.artifactPath}`);
+        vscode.window.showInformationMessage(`[Serial Agent] Build+${(result.flasher ?? getConfiguredFlashMethod()).toUpperCase()} Flash OK: ${result.artifactPath}`);
       });
     }),
   );

@@ -98,9 +98,10 @@ export interface KeilConfigCheckResult {
   target?: string;
 }
 
-/** Keil/JLink 执行结果（build/flash/buildAndFlash） */
+/** Keil/Flasher 执行结果（build/flash/buildAndFlash） */
 export interface KeilTaskResult {
   success: boolean;
+  flasher?: 'jlink' | 'stlink' | 'openocd';
   projectFile: string;
   artifactPath?: string;
   target?: string;

@@ -464,8 +464,8 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
       <button id="btn-keil-build" class="btn-secondary">Build</button>
       <button id="btn-keil-flash" class="btn-secondary">Flash</button>
       <button id="btn-keil-build-flash" class="btn-primary">Build+Flash</button>
-      <button id="btn-keil-cpu" class="btn-secondary">CPU Name</button>
-      <button id="btn-keil-config" class="btn-secondary">Keil Config</button>
+      <button id="btn-keil-cpu" class="btn-secondary">JLink CPU</button>
+      <button id="btn-keil-config" class="btn-secondary">Build/Flash Config</button>
     </div>
     <div id="keil-status" class="keil-status">Keil: Idle</div>
   </div>

@@ -698,6 +698,7 @@ export class BridgeServer {
         data: {
           stage: 'build',
           buildOk: result.success,
+          flasher: result.flasher,
           artifactPath: result.artifactPath,
           projectFile: result.projectFile,
           target: result.target,
@@ -726,6 +727,7 @@ export class BridgeServer {
         data: {
           stage: 'flash',
           flashOk: result.success,
+          flasher: result.flasher,
           artifactPath: result.artifactPath,
           projectFile: result.projectFile,
           target: result.target,
@@ -753,6 +755,7 @@ export class BridgeServer {
           stage: 'build-and-flash',
           buildOk: true,
           flashOk: true,
+          flasher: result.flasher,
           artifactPath: result.artifactPath,
           projectFile: result.projectFile,
           target: result.target,

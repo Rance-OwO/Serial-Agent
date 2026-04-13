@@ -2,10 +2,19 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
+import iconv from 'iconv-lite';
 import { KeilConfigCheckResult, KeilTaskResult } from './types';
 
 type JLinkInterface = 'SWD' | 'JTAG';
+type FlashMethod = 'jlink' | 'stlink' | 'openocd';
+type StLinkResetMode = 'default' | 'SWrst' | 'HWrst' | 'Crst';
+type OpenOcdSequence = 'helper' | 'low-reset';
+
+interface StLinkOptionByte {
+  key: string;
+  value: string;
+}
 
 interface KeilTargetMeta {
   name: string;
@@ -58,6 +67,8 @@ function stripWrappedQuotes(input: string): string {
 }
 
 export class KeilToolchainService {
+  private resolvedExternalEncoding?: string;
+
   constructor(private readonly output: vscode.OutputChannel) {}
 
   openSettings(): void {
@@ -165,15 +176,180 @@ export class KeilToolchainService {
     };
   }
 
-  async flash(artifactPathInput?: string): Promise<{ success: boolean; artifactPath: string; projectFile: string }> {
+  async flash(artifactPathInput?: string): Promise<KeilTaskResult> {
     const projectFile = await this.resolveProjectFile();
     const projectMeta = this.parseUvprojx(projectFile);
     const selectedTarget = this.resolveTargetName(projectMeta);
     const artifactPath = artifactPathInput ?? await this.resolveArtifact(projectFile, projectMeta, selectedTarget);
+    const flashMethod = this.resolveFlashMethod();
+
+    if (flashMethod === 'stlink') {
+      return this.flashWithStLink(projectFile, artifactPath, selectedTarget);
+    }
+
+    if (flashMethod === 'openocd') {
+      return this.flashWithOpenOcd(projectFile, artifactPath, selectedTarget);
+    }
+
+    return this.flashWithJLink(projectFile, projectMeta, selectedTarget, artifactPath);
+  }
+
+  async buildAndFlash(): Promise<KeilTaskResult> {
+    const buildResult = await this.build();
+    const flashResult = await this.flash(buildResult.artifactPath);
+    return {
+      success: true,
+      flasher: flashResult.flasher,
+      artifactPath: flashResult.artifactPath,
+      projectFile: flashResult.projectFile,
+      target: flashResult.target ?? buildResult.target,
+    };
+  }
+
+  async checkConfig(): Promise<KeilConfigCheckResult> {
+    const checks: KeilConfigCheckResult['checks'] = [];
+    let projectFile: string | undefined;
+    let target: string | undefined;
+    let projectMeta: ProjectMeta | undefined;
+
+    try {
+      projectFile = await this.resolveProjectFile();
+      checks.push({ key: 'keil.projectFile', ok: true, message: 'Project file found', value: projectFile });
+      projectMeta = this.parseUvprojx(projectFile);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      checks.push({ key: 'keil.projectFile', ok: false, message: msg });
+    }
+
+    if (projectMeta) {
+      try {
+        target = this.resolveTargetName(projectMeta);
+        checks.push({ key: 'keil.target', ok: true, message: 'Target resolved', value: target });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        checks.push({ key: 'keil.target', ok: false, message: msg });
+      }
+    } else {
+      checks.push({ key: 'keil.target', ok: false, message: 'Target check skipped because project file is unavailable' });
+    }
+
+    try {
+      const uv4 = this.resolveUv4Path();
+      checks.push({ key: 'keil.uv4Path', ok: true, message: 'UV4 executable found', value: uv4 });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      checks.push({ key: 'keil.uv4Path', ok: false, message: msg });
+    }
+
+    const flashMethod = this.resolveFlashMethod();
+    checks.push({ key: 'flash.method', ok: true, message: 'Flash backend selected', value: flashMethod });
+
+    if (flashMethod === 'openocd') {
+      try {
+        const openocdExe = this.resolveOpenOcdExePath();
+        checks.push({ key: 'openocd.exePath', ok: true, message: 'OpenOCD executable found', value: openocdExe });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        checks.push({ key: 'openocd.exePath', ok: false, message: msg });
+      }
+
+      try {
+        const scriptsDir = this.resolveOpenOcdScriptsDir();
+        checks.push({ key: 'openocd.scriptsDir', ok: true, message: 'OpenOCD scripts directory found', value: scriptsDir });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        checks.push({ key: 'openocd.scriptsDir', ok: false, message: msg });
+      }
+
+      try {
+        const interfacePath = this.resolveOpenOcdConfigPath('openocd.interface', 'interface');
+        checks.push({ key: 'openocd.interface', ok: true, message: 'OpenOCD interface config found', value: interfacePath });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        checks.push({ key: 'openocd.interface', ok: false, message: msg });
+      }
+
+      try {
+        const targetPath = this.resolveOpenOcdConfigPath('openocd.target', 'target');
+        checks.push({ key: 'openocd.target', ok: true, message: 'OpenOCD target config found', value: targetPath });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        checks.push({ key: 'openocd.target', ok: false, message: msg });
+      }
+
+      try {
+        const baseAddr = this.resolveOpenOcdBaseAddr();
+        checks.push({ key: 'openocd.baseAddr', ok: true, message: 'OpenOCD base address is valid', value: baseAddr });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        checks.push({ key: 'openocd.baseAddr', ok: false, message: msg });
+      }
+    } else if (flashMethod === 'stlink') {
+      try {
+        const stlinkExe = this.resolveStLinkExePath();
+        checks.push({ key: 'stlink.exePath', ok: true, message: 'STM32_Programmer_CLI executable found', value: stlinkExe });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        checks.push({ key: 'stlink.exePath', ok: false, message: msg });
+      }
+
+      try {
+        const loaderPath = this.resolveOptionalWorkspaceFile('stlink.externalLoader');
+        if (loaderPath) {
+          checks.push({ key: 'stlink.externalLoader', ok: true, message: 'External loader found', value: loaderPath });
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        checks.push({ key: 'stlink.externalLoader', ok: false, message: msg });
+      }
+
+      try {
+        const optionBytesPath = this.resolveOptionalWorkspaceFile('stlink.optionBytesFile');
+        if (optionBytesPath) {
+          checks.push({ key: 'stlink.optionBytesFile', ok: true, message: 'Option bytes file found', value: optionBytesPath });
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        checks.push({ key: 'stlink.optionBytesFile', ok: false, message: msg });
+      }
+    } else {
+      try {
+        const jlinkExe = this.resolveJLinkExePath();
+        checks.push({ key: 'jlink.installDirectory', ok: true, message: 'JLink executable found', value: jlinkExe });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        checks.push({ key: 'jlink.installDirectory', ok: false, message: msg });
+      }
+
+      if (projectMeta) {
+        try {
+          const jlinkDevice = this.resolveJLinkDevice(projectMeta, target);
+          checks.push({ key: 'jlink.device', ok: true, message: 'JLink device resolved', value: jlinkDevice });
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          checks.push({ key: 'jlink.device', ok: false, message: msg });
+        }
+      } else {
+        checks.push({ key: 'jlink.device', ok: false, message: 'JLink device check skipped because project file is unavailable' });
+      }
+    }
+
+    return {
+      ready: checks.every(item => item.ok),
+      checks,
+      projectFile,
+      target,
+    };
+  }
+
+  private async flashWithJLink(
+    projectFile: string,
+    projectMeta: ProjectMeta,
+    selectedTarget: string | undefined,
+    artifactPath: string,
+  ): Promise<KeilTaskResult> {
     const jlinkExe = this.resolveJLinkExePath();
-
     const jlinkDevice = this.resolveJLinkDevice(projectMeta, selectedTarget);
-
     const jlinkInterface = (this.getConfigValue<string>('jlink.interface', 'SWD').toUpperCase() === 'JTAG' ? 'JTAG' : 'SWD') as JLinkInterface;
     const jlinkSpeed = this.getConfigValue<number>('jlink.speed', 4000);
     const jlinkBaseAddr = this.getConfigValue<string>('jlink.baseAddr', '0x08000000').trim();
@@ -215,76 +391,152 @@ export class KeilToolchainService {
     }
 
     this.output.appendLine('[JLink] Flash done.');
-    return { success: true, artifactPath, projectFile };
-  }
-
-  async buildAndFlash(): Promise<{ success: boolean; artifactPath: string; projectFile: string }> {
-    const buildResult = await this.build();
-    const flashResult = await this.flash(buildResult.artifactPath);
-    return { success: true, artifactPath: flashResult.artifactPath, projectFile: flashResult.projectFile };
-  }
-
-  async checkConfig(): Promise<KeilConfigCheckResult> {
-    const checks: KeilConfigCheckResult['checks'] = [];
-    let projectFile: string | undefined;
-    let target: string | undefined;
-    let projectMeta: ProjectMeta | undefined;
-
-    try {
-      projectFile = await this.resolveProjectFile();
-      checks.push({ key: 'keil.projectFile', ok: true, message: 'Project file found', value: projectFile });
-      projectMeta = this.parseUvprojx(projectFile);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      checks.push({ key: 'keil.projectFile', ok: false, message: msg });
-    }
-
-    if (projectMeta) {
-      try {
-        target = this.resolveTargetName(projectMeta);
-        checks.push({ key: 'keil.target', ok: true, message: 'Target resolved', value: target });
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        checks.push({ key: 'keil.target', ok: false, message: msg });
-      }
-    } else {
-      checks.push({ key: 'keil.target', ok: false, message: 'Target check skipped because project file is unavailable' });
-    }
-
-    try {
-      const uv4 = this.resolveUv4Path();
-      checks.push({ key: 'keil.uv4Path', ok: true, message: 'UV4 executable found', value: uv4 });
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      checks.push({ key: 'keil.uv4Path', ok: false, message: msg });
-    }
-
-    try {
-      const jlinkExe = this.resolveJLinkExePath();
-      checks.push({ key: 'jlink.installDirectory', ok: true, message: 'JLink executable found', value: jlinkExe });
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      checks.push({ key: 'jlink.installDirectory', ok: false, message: msg });
-    }
-
-    if (projectMeta) {
-      try {
-        const jlinkDevice = this.resolveJLinkDevice(projectMeta, target);
-        checks.push({ key: 'jlink.device', ok: true, message: 'JLink device resolved', value: jlinkDevice });
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        checks.push({ key: 'jlink.device', ok: false, message: msg });
-      }
-    } else {
-      checks.push({ key: 'jlink.device', ok: false, message: 'JLink device check skipped because project file is unavailable' });
-    }
-
     return {
-      ready: checks.every(item => item.ok),
-      checks,
+      success: true,
+      flasher: 'jlink',
+      artifactPath,
       projectFile,
-      target,
+      target: selectedTarget,
     };
+  }
+
+  private async flashWithStLink(
+    projectFile: string,
+    artifactPath: string,
+    selectedTarget: string | undefined,
+  ): Promise<KeilTaskResult> {
+    const stlinkExe = this.resolveStLinkExePath();
+    const stlinkInterface = (this.getConfigValue<string>('stlink.interface', 'SWD').toUpperCase() === 'JTAG' ? 'JTAG' : 'SWD') as JLinkInterface;
+    const stlinkSpeed = this.getConfigValue<number>('stlink.speed', 4000);
+    const stlinkBaseAddr = this.getConfigValue<string>('stlink.baseAddr', '0x08000000').trim();
+    const resetMode = this.getConfigValue<StLinkResetMode>('stlink.resetMode', 'default');
+    const runAfterProgram = this.getConfigValue<boolean>('stlink.runAfterProgram', true);
+    const externalLoader = this.resolveOptionalWorkspaceFile('stlink.externalLoader', stlinkExe);
+    const optionBytesFile = this.resolveOptionalWorkspaceFile('stlink.optionBytesFile');
+    const additionalArgs = this.parseAdditionalArgs(this.getConfigValue<string>('stlink.additionalArgs', ''));
+
+    const args = ['-c', `port=${stlinkInterface}`, `freq=${stlinkSpeed}`];
+    if (resetMode !== 'default') {
+      args.push(`reset=${resetMode}`);
+    }
+    if (externalLoader) {
+      args.push('-el', externalLoader);
+    }
+    // Hide STM32CubeProgrammer's console progress bar because VS Code output
+    // does not render its block characters consistently on Windows.
+    args.push('-q');
+
+    const optionBytes = optionBytesFile ? this.parseOptionBytesFile(optionBytesFile) : [];
+    if (optionBytes.length > 0) {
+      args.push('-ob', ...optionBytes.map((item) => `${item.key}=${item.value}`), '-ob', 'displ');
+    }
+
+    args.push('--download', artifactPath);
+    if (/\.bin$/i.test(artifactPath)) {
+      args.push(stlinkBaseAddr);
+    }
+    args.push('-v');
+    if (runAfterProgram) {
+      args.push('--go');
+    }
+    args.push(...additionalArgs);
+
+    this.output.appendLine(`[STLink] Exe: ${stlinkExe}`);
+    this.output.appendLine(`[STLink] Interface: ${stlinkInterface}`);
+    this.output.appendLine(`[STLink] Speed: ${stlinkSpeed}`);
+    if (resetMode !== 'default') {
+      this.output.appendLine(`[STLink] ResetMode: ${resetMode}`);
+    }
+    if (/\.bin$/i.test(artifactPath)) {
+      this.output.appendLine(`[STLink] Bin BaseAddr: ${stlinkBaseAddr}`);
+    }
+    if (externalLoader) {
+      this.output.appendLine(`[STLink] External Loader: ${externalLoader}`);
+    }
+    if (optionBytesFile) {
+      this.output.appendLine(`[STLink] Option Bytes: ${optionBytesFile}`);
+    }
+
+    const code = await this.runProcess(stlinkExe, args, process.env);
+    if (code !== 0) {
+      throw new Error(`STM32_Programmer_CLI flash failed with exit code ${code}`);
+    }
+
+    this.output.appendLine('[STLink] Flash done.');
+    return {
+      success: true,
+      flasher: 'stlink',
+      artifactPath,
+      projectFile,
+      target: selectedTarget,
+    };
+  }
+
+  private async flashWithOpenOcd(
+    projectFile: string,
+    artifactPath: string,
+    selectedTarget: string | undefined,
+  ): Promise<KeilTaskResult> {
+    const openocdExe = this.resolveOpenOcdExePath();
+    const scriptsDir = this.resolveOpenOcdScriptsDir();
+    const interfaceName = this.resolveOpenOcdConfigName('openocd.interface');
+    const targetName = this.resolveOpenOcdConfigName('openocd.target');
+    const runAfterProgram = this.getConfigValue<boolean>('openocd.runAfterProgram', false);
+    const sequence = this.resolveOpenOcdSequence();
+
+    // Resolve config existence before launching OpenOCD so config-check and flash fail consistently.
+    this.resolveOpenOcdConfigPath('openocd.interface', 'interface');
+    this.resolveOpenOcdConfigPath('openocd.target', 'target');
+
+    const openocdArtifactPath = this.normalizeOpenOcdProgramPath(artifactPath);
+    const args = [
+      '-s', scriptsDir,
+      '-f', `interface/${interfaceName}.cfg`,
+      '-f', `target/${targetName}.cfg`,
+    ];
+
+    if (sequence === 'low-reset') {
+      this.appendOpenOcdLowResetArgs(args, openocdArtifactPath, artifactPath, runAfterProgram);
+    } else {
+      this.appendOpenOcdHelperArgs(args, openocdArtifactPath, artifactPath, runAfterProgram);
+    }
+
+    this.output.appendLine(`[OpenOCD] Exe: ${openocdExe}`);
+    this.output.appendLine(`[OpenOCD] Scripts: ${scriptsDir}`);
+    this.output.appendLine(`[OpenOCD] Interface: ${interfaceName}`);
+    this.output.appendLine(`[OpenOCD] Target: ${targetName}`);
+    this.output.appendLine(`[OpenOCD] Sequence: ${sequence}`);
+    if (/\.bin$/i.test(artifactPath)) {
+      this.output.appendLine(`[OpenOCD] Bin BaseAddr: ${this.resolveOpenOcdBaseAddr()}`);
+    }
+    if (runAfterProgram) {
+      this.output.appendLine('[OpenOCD] RunAfterProgram: true');
+    }
+
+    const code = await this.runProcess(openocdExe, args, process.env);
+    if (code !== 0) {
+      throw new Error(`OpenOCD flash failed with exit code ${code}`);
+    }
+
+    this.output.appendLine('[OpenOCD] Flash done.');
+    return {
+      success: true,
+      flasher: 'openocd',
+      artifactPath,
+      projectFile,
+      target: selectedTarget,
+    };
+  }
+
+  private resolveFlashMethod(): FlashMethod {
+    const configured = this.getConfigValue<string>('flash.method', 'jlink').trim().toLowerCase();
+    if (configured === 'stlink') {
+      return 'stlink';
+    }
+    if (configured === 'openocd') {
+      return 'openocd';
+    }
+    return 'jlink';
   }
 
   private getConfigValue<T>(key: string, fallback: T): T {
@@ -333,6 +585,133 @@ export class KeilToolchainService {
     throw new Error('Cannot find JLink executable. Please configure serialagent.jlink.installDirectory.');
   }
 
+  private resolveStLinkExePath(): string {
+    const configured = stripWrappedQuotes(this.getConfigValue<string>('stlink.exePath', '').trim());
+    if (!configured) {
+      throw new Error('Cannot find STM32_Programmer_CLI executable. Please configure serialagent.stlink.exePath.');
+    }
+    if (!fs.existsSync(configured)) {
+      throw new Error(`Configured STM32_Programmer_CLI executable not found: ${configured}`);
+    }
+    return configured;
+  }
+
+  private resolveOpenOcdExePath(): string {
+    const configured = stripWrappedQuotes(this.getConfigValue<string>('openocd.exePath', '').trim());
+    if (!configured) {
+      throw new Error('Cannot find OpenOCD executable. Please configure serialagent.openocd.exePath.');
+    }
+    if (!fs.existsSync(configured)) {
+      throw new Error(`Configured OpenOCD executable not found: ${configured}`);
+    }
+    return configured;
+  }
+
+  private resolveOpenOcdScriptsDir(): string {
+    const openocdExe = this.resolveOpenOcdExePath();
+    const exeDir = path.dirname(openocdExe);
+    const candidates = [
+      path.resolve(exeDir, '..', 'scripts'),
+      path.resolve(exeDir, '..', 'share', 'openocd', 'scripts'),
+      path.resolve(exeDir, '..', 'openocd', 'scripts'),
+    ];
+
+    for (const candidate of candidates) {
+      if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
+        return candidate;
+      }
+    }
+
+    throw new Error(`Cannot find OpenOCD scripts directory from executable: ${openocdExe}`);
+  }
+
+  private resolveOpenOcdConfigName(configKey: 'openocd.interface' | 'openocd.target'): string {
+    const configured = stripWrappedQuotes(this.getConfigValue<string>(configKey, '').trim());
+    if (!configured) {
+      throw new Error(`Missing OpenOCD config name. Please configure serialagent.${configKey}.`);
+    }
+
+    const normalized = configured.replace(/\.cfg$/i, '').trim();
+    if (!normalized) {
+      throw new Error(`Invalid OpenOCD config name. Please configure serialagent.${configKey}.`);
+    }
+    if (normalized.includes('/') || normalized.includes('\\')) {
+      throw new Error(`OpenOCD setting serialagent.${configKey} must be a short name like 'cmsis-dap', not a path.`);
+    }
+    return normalized;
+  }
+
+  private resolveOpenOcdConfigPath(
+    configKey: 'openocd.interface' | 'openocd.target',
+    group: 'interface' | 'target',
+  ): string {
+    const scriptsDir = this.resolveOpenOcdScriptsDir();
+    const configName = this.resolveOpenOcdConfigName(configKey);
+    const resolved = path.join(scriptsDir, group, `${configName}.cfg`);
+    if (!fs.existsSync(resolved)) {
+      throw new Error(`Configured OpenOCD ${group} config not found: ${resolved}`);
+    }
+    return resolved;
+  }
+
+  private resolveOpenOcdBaseAddr(): string {
+    const configured = stripWrappedQuotes(this.getConfigValue<string>('openocd.baseAddr', '0x08000000').trim());
+    if (!/^0x[0-9a-f]+$/i.test(configured)) {
+      throw new Error(`Invalid OpenOCD base address. Please configure serialagent.openocd.baseAddr as hex, for example 0x08000000.`);
+    }
+    return configured;
+  }
+
+  private resolveOpenOcdSequence(): OpenOcdSequence {
+    const configured = this.getConfigValue<string>('openocd.sequence', 'helper').trim().toLowerCase();
+    return configured === 'low-reset' ? 'low-reset' : 'helper';
+  }
+
+  private normalizeOpenOcdProgramPath(filePath: string): string {
+    return filePath.replace(/\\/g, '/');
+  }
+
+  private appendOpenOcdHelperArgs(
+    args: string[],
+    openocdArtifactPath: string,
+    artifactPath: string,
+    runAfterProgram: boolean,
+  ): void {
+    const programCommand = /\.bin$/i.test(artifactPath)
+      ? `program "${openocdArtifactPath}" ${this.resolveOpenOcdBaseAddr()} verify`
+      : `program "${openocdArtifactPath}" verify`;
+
+    args.push('-c', programCommand);
+    if (runAfterProgram) {
+      args.push('-c', 'reset run');
+    }
+    args.push('-c', 'exit');
+  }
+
+  private appendOpenOcdLowResetArgs(
+    args: string[],
+    openocdArtifactPath: string,
+    artifactPath: string,
+    runAfterProgram: boolean,
+  ): void {
+    args.push('-c', 'init');
+    args.push('-c', 'reset init');
+
+    if (/\.bin$/i.test(artifactPath)) {
+      const baseAddr = this.resolveOpenOcdBaseAddr();
+      args.push('-c', `flash write_image erase "${openocdArtifactPath}" ${baseAddr} bin`);
+      args.push('-c', `flash verify_image "${openocdArtifactPath}" ${baseAddr} bin`);
+    } else {
+      args.push('-c', `flash write_image erase "${openocdArtifactPath}"`);
+      args.push('-c', `flash verify_image "${openocdArtifactPath}"`);
+    }
+
+    if (runAfterProgram) {
+      args.push('-c', 'reset run');
+    }
+    args.push('-c', 'exit');
+  }
+
   private async resolveProjectFile(): Promise<string> {
     const configured = stripWrappedQuotes(this.getConfigValue<string>('keil.projectFile', '').trim());
     if (configured) {
@@ -365,6 +744,72 @@ export class KeilToolchainService {
     return picked;
   }
 
+  private resolveOptionalWorkspaceFile(configKey: string, stlinkExePath?: string): string | undefined {
+    const configured = stripWrappedQuotes(this.getConfigValue<string>(configKey, '').trim());
+    if (!configured) {
+      return undefined;
+    }
+
+    if (configured.startsWith('<stlink>/') || configured.startsWith('<stlink>\\')) {
+      if (!stlinkExePath) {
+        throw new Error(`Setting '${configKey}' uses <stlink> prefix, but no STM32_Programmer_CLI executable is available.`);
+      }
+      const relativePath = configured.replace(/^<stlink>[\\/]/, '');
+      const resolved = path.join(path.dirname(stlinkExePath), 'ExternalLoader', relativePath);
+      if (!fs.existsSync(resolved)) {
+        throw new Error(`Configured file not found for '${configKey}': ${resolved}`);
+      }
+      return resolved;
+    }
+
+    const resolved = path.isAbsolute(configured) ? configured : this.joinWorkspacePath(configured);
+    if (!resolved || !fs.existsSync(resolved)) {
+      throw new Error(`Configured file not found for '${configKey}': ${resolved ?? configured}`);
+    }
+    return resolved;
+  }
+
+  private parseOptionBytesFile(filePath: string): StLinkOptionByte[] {
+    const lines = fs.readFileSync(filePath, 'utf8').split(/\r?\n/);
+    const result: StLinkOptionByte[] = [];
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith(';') || line.startsWith('#') || line.startsWith('[')) {
+        continue;
+      }
+
+      const separatorIndex = line.indexOf('=');
+      if (separatorIndex <= 0 || separatorIndex === line.length - 1) {
+        throw new Error(`Invalid option bytes line in ${filePath}: ${line}`);
+      }
+
+      result.push({
+        key: line.slice(0, separatorIndex).trim(),
+        value: line.slice(separatorIndex + 1).trim(),
+      });
+    }
+
+    return result;
+  }
+
+  private parseAdditionalArgs(input: string): string[] {
+    const trimmed = input.trim();
+    if (!trimmed) {
+      return [];
+    }
+
+    const args: string[] = [];
+    const matcher = /"([^"]*)"|'([^']*)'|[^\s]+/g;
+    let match: RegExpExecArray | null;
+
+    while ((match = matcher.exec(trimmed)) !== null) {
+      args.push(match[1] ?? match[2] ?? match[0]);
+    }
+
+    return args;
+  }
+
   private parseUvprojx(projectFile: string): ProjectMeta {
     const xmlText = fs.readFileSync(projectFile, 'utf8');
     const targetBlocks = xmlText.match(/<Target>[\s\S]*?<\/Target>/g) || [];
@@ -386,7 +831,7 @@ export class KeilToolchainService {
       return { hasErrorKeyword: false };
     }
 
-    const raw = fs.readFileSync(logFilePath, 'utf8');
+    const raw = this.decodeExternalTextBuffer(fs.readFileSync(logFilePath));
     const lines = raw.split(/\r?\n/).map(line => line.trimEnd());
     this.output.appendLine(`[Keil] Build log: ${logFilePath}`);
     for (const line of lines) {
@@ -644,6 +1089,75 @@ export class KeilToolchainService {
     return path.resolve(folder.uri.fsPath, relPath);
   }
 
+  private resolveExternalTextEncoding(): string {
+    if (process.platform !== 'win32') {
+      return 'utf8';
+    }
+    if (this.resolvedExternalEncoding) {
+      return this.resolvedExternalEncoding;
+    }
+
+    const codePage = this.detectWindowsCodePage();
+    const resolved = this.mapCodePageToEncoding(codePage);
+    if (!codePage) {
+      this.output.appendLine('[Keil] Windows code page probe failed. Falling back to UTF-8 for external tool output.');
+    }
+    this.resolvedExternalEncoding = resolved;
+    return resolved;
+  }
+
+  private detectWindowsCodePage(): string | undefined {
+    const cmd = process.env.ComSpec || 'cmd.exe';
+    const result = spawnSync(cmd, ['/d', '/c', 'chcp'], {
+      windowsHide: true,
+      encoding: 'buffer',
+    });
+    if (result.error) {
+      return undefined;
+    }
+
+    const stdout = Buffer.isBuffer(result.stdout)
+      ? result.stdout.toString('ascii')
+      : `${result.stdout ?? ''}`;
+    const match = stdout.match(/(\d{3,5})/);
+    return match?.[1];
+  }
+
+  private mapCodePageToEncoding(codePage?: string): string {
+    if (!codePage) {
+      return 'utf8';
+    }
+
+    const directMap: Record<string, string> = {
+      '65001': 'utf8',
+      '1200': 'utf16le',
+      '1201': 'utf16-be',
+    };
+    const mapped = directMap[codePage] || `cp${codePage}`;
+    return iconv.encodingExists(mapped) ? mapped : 'utf8';
+  }
+
+  private decodeExternalTextBuffer(buffer: Buffer): string {
+    if (buffer.length >= 3 &&
+        buffer[0] === 0xef &&
+        buffer[1] === 0xbb &&
+        buffer[2] === 0xbf) {
+      return buffer.subarray(3).toString('utf8');
+    }
+    if (buffer.length >= 2 &&
+        buffer[0] === 0xff &&
+        buffer[1] === 0xfe) {
+      return buffer.subarray(2).toString('utf16le');
+    }
+    if (buffer.length >= 2 &&
+        buffer[0] === 0xfe &&
+        buffer[1] === 0xff) {
+      return iconv.decode(buffer.subarray(2), 'utf16-be');
+    }
+
+    return iconv.decode(buffer, this.resolveExternalTextEncoding());
+  }
+
   private runProcess(command: string, args: string[], env?: NodeJS.ProcessEnv): Promise<number> {
     return new Promise((resolve, reject) => {
       const child = spawn(command, args, {
@@ -652,16 +1166,44 @@ export class KeilToolchainService {
         windowsHide: true,
       });
 
+      const stdoutDecoder = iconv.getDecoder(this.resolveExternalTextEncoding());
+      const stderrDecoder = iconv.getDecoder(this.resolveExternalTextEncoding());
+      let stdoutFlushed = false;
+      let stderrFlushed = false;
+      const appendDecoded = (text: string | undefined) => {
+        if (text) {
+          this.output.append(text);
+        }
+      };
+      const flushStdout = () => {
+        if (stdoutFlushed) { return; }
+        stdoutFlushed = true;
+        appendDecoded(stdoutDecoder.end());
+      };
+      const flushStderr = () => {
+        if (stderrFlushed) { return; }
+        stderrFlushed = true;
+        appendDecoded(stderrDecoder.end());
+      };
+
       child.stdout.on('data', (chunk: Buffer) => {
-        this.output.append(chunk.toString());
+        appendDecoded(stdoutDecoder.write(chunk));
       });
       child.stderr.on('data', (chunk: Buffer) => {
-        this.output.append(chunk.toString());
+        appendDecoded(stderrDecoder.write(chunk));
+      });
+      child.stdout.on('end', () => {
+        flushStdout();
+      });
+      child.stderr.on('end', () => {
+        flushStderr();
       });
       child.on('error', (error) => {
         reject(error);
       });
       child.on('close', (code) => {
+        flushStdout();
+        flushStderr();
         resolve(code ?? -1);
       });
     });
