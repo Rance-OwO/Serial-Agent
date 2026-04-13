@@ -178,14 +178,8 @@
           "type": "string",
           "default": "build",
           "scope": "resource",
-          "enum": ["build", "flash", "buildAndFlash"],
-          "enumItemLabels": ["Build", "Flash", "Build+Flash"],
-          "markdownEnumDescriptions": [
-            "Run **Keil Build** only.",
-            "Run **JLink Flash** only.",
-            "Run **Keil Build** first, then **JLink Flash**."
-          ],
-          "markdownDescription": "Select the action triggered by `F7`."
+          "enum": ["build", "buildAndFlash"],
+          "markdownDescription": "Action triggered by `F7`. `build`: run Keil build only. `buildAndFlash`: build first, then flash via JLink."
         },
         "serialagent.jlink.installDirectory": {
           "type": "string",
