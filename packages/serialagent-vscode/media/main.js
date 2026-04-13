@@ -16,6 +16,8 @@
 
   const MAX_HISTORY = 20;
   const MAX_RENDER_ENTRIES = 5000;
+  const DEFAULT_NORMAL_SEND_HEIGHT = 38;
+  const DEFAULT_FOCUS_SEND_HEIGHT = 30;
 
   /**
    * @typedef {{ id: string; label: string; value: string; hexSend?: boolean }} QuickCommand
@@ -29,6 +31,9 @@
   const statusText = document.getElementById('status-text');
   const rxCountEl = document.getElementById('rx-count');
   const txCountEl = document.getElementById('tx-count');
+  const focusModeBtn = document.getElementById('btn-focus-mode');
+  const logFocusModeBtn = document.getElementById('btn-log-focus-mode');
+  const focusConnectBtn = document.getElementById('btn-focus-connect');
 
   /** @type {HTMLSelectElement | null} */
   const portSelect = /** @type {HTMLSelectElement} */ (document.getElementById('port-select'));
@@ -102,6 +107,9 @@
   let frozenLog = false;
   let logEntries = /** @type {LogEntry[]} */ ([]);
   let activeLogFilter = '';
+  let focusMode = false;
+  let normalSendHeight;
+  let focusSendHeight;
 
   restoreWebviewState();
 
@@ -119,9 +127,6 @@
 
     if (sendInput && previousState.sendText) {
       sendInput.value = previousState.sendText;
-    }
-    if (sendSection && previousState.sendHeight) {
-      sendSection.style.flexBasis = previousState.sendHeight + 'px';
     }
     if (optHexSend && previousState.hexSend) {
       optHexSend.checked = true;
@@ -143,7 +148,6 @@
   function saveState() {
     vscode.setState({
       sendText: sendInput?.value || '',
-      sendHeight: sendSection ? sendSection.offsetHeight : undefined,
       hexSend: optHexSend?.checked || false,
       autoScroll: optAutoScroll?.checked || false,
       logFilter: logSearchInput?.value || '',
@@ -156,20 +160,12 @@
       vscode.postMessage({ type: 'refreshPorts' });
     });
 
-    connectBtn?.addEventListener('click', () => {
-      if (connected) {
-        vscode.postMessage({ type: 'disconnect' });
-        return;
-      }
-      const config = collectCurrentConfig();
-      vscode.postMessage({ type: 'connect', ...config });
-      vscode.postMessage({ type: 'saveConfig', config });
-    });
-
-    clearBtn?.addEventListener('click', () => {
-      vscode.postMessage({ type: 'clearLog' });
-      logEntries = [];
-      renderLogArea();
+    connectBtn?.addEventListener('click', handleConnectionToggle);
+    focusConnectBtn?.addEventListener('click', handleConnectionToggle);
+    [focusModeBtn, logFocusModeBtn].forEach((button) => {
+      button?.addEventListener('click', () => {
+        vscode.postMessage({ type: 'toggleFocusMode', focusMode: !focusMode });
+      });
     });
 
     keilBuildBtn?.addEventListener('click', () => {
@@ -231,6 +227,12 @@
         renderLogArea();
       }
       saveState();
+    });
+
+    clearBtn?.addEventListener('click', () => {
+      vscode.postMessage({ type: 'clearLog' });
+      logEntries = [];
+      renderLogArea();
     });
 
     copyLogBtn?.addEventListener('click', async () => {
@@ -368,8 +370,101 @@
       dragging = false;
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
+      saveCurrentLayout();
       saveState();
     });
+  }
+
+  function handleConnectionToggle() {
+    if (connected) {
+      vscode.postMessage({ type: 'disconnect' });
+      return;
+    }
+
+    const config = collectCurrentConfig();
+    vscode.postMessage({ type: 'connect', ...config });
+    vscode.postMessage({ type: 'saveConfig', config });
+  }
+
+  function getActiveSendHeight() {
+    return focusMode ? focusSendHeight : normalSendHeight;
+  }
+
+  function getDefaultSendHeight() {
+    return focusMode ? DEFAULT_FOCUS_SEND_HEIGHT : DEFAULT_NORMAL_SEND_HEIGHT;
+  }
+
+  function applyCurrentLayout() {
+    if (!sendSection) {
+      return;
+    }
+
+    const nextHeight = getActiveSendHeight();
+    sendSection.style.flexBasis = `${nextHeight ?? getDefaultSendHeight()}%`;
+  }
+
+  function saveCurrentLayout() {
+    if (!(sendSection && contentWrapper instanceof HTMLElement)) {
+      return;
+    }
+
+    const wrapperHeight = contentWrapper.clientHeight;
+    if (!wrapperHeight) {
+      return;
+    }
+
+    const nextHeight = Math.max(10, Math.min(90, (sendSection.offsetHeight / wrapperHeight) * 100));
+    if (focusMode) {
+      focusSendHeight = nextHeight;
+      vscode.postMessage({ type: 'saveFocusLayout', focusSendHeight: nextHeight });
+      return;
+    }
+
+    normalSendHeight = nextHeight;
+    vscode.postMessage({ type: 'saveFocusLayout', normalSendHeight: nextHeight });
+  }
+
+  function updateConnectionButtons() {
+    if (connectBtn) {
+      connectBtn.textContent = connected ? 'Close' : 'Open';
+      connectBtn.className = connected ? 'btn-danger' : 'btn-primary';
+    }
+
+    if (focusConnectBtn) {
+      focusConnectBtn.textContent = connected ? 'Close' : 'Open';
+      focusConnectBtn.classList.toggle('status-action-primary', !connected);
+      focusConnectBtn.classList.toggle('status-action-danger', connected);
+    }
+  }
+
+  function updateFocusButton() {
+    [focusModeBtn, logFocusModeBtn].forEach((button) => {
+      if (!button) {
+        return;
+      }
+
+      button.textContent = focusMode ? 'Exit Focus' : 'Focus';
+      button.title = focusMode ? 'Exit focus mode' : 'Enter focus mode';
+      button.classList.toggle('is-active', focusMode);
+    });
+  }
+
+  function applyUiState(uiState) {
+    focusMode = !!uiState?.focusMode;
+    normalSendHeight = typeof uiState?.normalSendHeight === 'number'
+      ? uiState.normalSendHeight
+      : normalSendHeight;
+    focusSendHeight = typeof uiState?.focusSendHeight === 'number'
+      ? uiState.focusSendHeight
+      : focusSendHeight;
+
+    document.body.classList.toggle('focus-mode', focusMode);
+    if (focusConnectBtn) {
+      focusConnectBtn.hidden = !focusMode;
+    }
+    updateFocusButton();
+    updateConnectionButtons();
+    applyCurrentLayout();
   }
 
   function collectCurrentConfig() {
@@ -747,10 +842,7 @@
             ? `${message.port} @ ${message.baudRate}`
             : 'Disconnected';
         }
-        if (connectBtn) {
-          connectBtn.textContent = connected ? 'Close' : 'Open';
-          connectBtn.className = connected ? 'btn-danger' : 'btn-primary';
-        }
+        updateConnectionButtons();
 
         [portSelect, baudrateInput, databitsSelect, paritySelect, stopbitsSelect].forEach((element) => {
           if (element) { element.disabled = connected; }
@@ -807,7 +899,13 @@
         } else {
           renderQuickCommands();
         }
+        applyUiState(message.uiState || {});
         updateEmptyState();
+        break;
+      }
+
+      case 'updateUiState': {
+        applyUiState(message.uiState || {});
         break;
       }
 
@@ -827,6 +925,8 @@
 
   renderQuickCommands();
   updateHistorySelect();
+  updateConnectionButtons();
+  applyUiState({});
   updateFreezeButton();
   updateEmptyState();
 })();

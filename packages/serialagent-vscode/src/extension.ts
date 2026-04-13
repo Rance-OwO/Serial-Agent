@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { BridgeServer } from './bridge-server';
+import { resolveKeilF7Command } from './keil-f7-action';
 import { KeilToolchainService } from './keil-toolchain';
 import { SerialPanelProvider } from './serial-panel-provider';
 import { SerialManager } from './serial-manager';
@@ -191,6 +192,12 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
+    vscode.commands.registerCommand('serialagent.toggleFocusMode', () => {
+      provider.toggleFocusMode();
+    }),
+  );
+
+  context.subscriptions.push(
     vscode.commands.registerCommand('serialagent.keil.openSettings', () => {
       keilToolchain.openSettings();
     }),
@@ -232,6 +239,19 @@ export function activate(context: vscode.ExtensionContext) {
         const result = await keilToolchain.buildAndFlash();
         vscode.window.showInformationMessage(`[Serial Agent] Build+Flash OK: ${result.artifactPath}`);
       });
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('serialagent.keil.runF7Action', async () => {
+      try {
+        const action = vscode.workspace.getConfiguration('serialagent').get<string>('keil.f7Action', 'build');
+        const command = resolveKeilF7Command(action);
+        await vscode.commands.executeCommand(command);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        vscode.window.showErrorMessage(`[Serial Agent] F7 action failed: ${msg}`);
+      }
     }),
   );
 

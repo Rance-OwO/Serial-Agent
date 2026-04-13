@@ -33,5 +33,6 @@ _KeilProject
 prodoc/
 .playwright-cli/
 __coding_plan/
-tests/
+tests/*
+!tests/keil-f7-action.test.ts
 AGENTS.md

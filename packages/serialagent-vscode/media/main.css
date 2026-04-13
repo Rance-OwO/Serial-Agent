@@ -15,16 +15,71 @@ body {
 .status-bar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   padding: 6px 0;
   font-size: 11px;
   color: var(--vscode-descriptionForeground);
   border-bottom: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.2));
   margin-bottom: 10px;
   gap: 6px;
+  row-gap: 4px;
   flex-shrink: 0;
 }
 
+.status-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-action-btn {
+  padding: 3px 8px;
+  font-size: 11px;
+  border: 1px solid var(--vscode-input-border, rgba(128, 128, 128, 0.3));
+  border-radius: 999px;
+  cursor: pointer;
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  background: var(--vscode-button-secondaryBackground, rgba(128, 128, 128, 0.18));
+}
+
+.status-action-btn:hover {
+  background: var(--vscode-button-secondaryHoverBackground, rgba(128, 128, 128, 0.3));
+}
+
+.status-action-btn.is-active,
+.status-action-btn.status-action-primary {
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+  border-color: transparent;
+}
+
+.status-action-btn.status-action-primary:hover,
+.status-action-btn.is-active:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+
+.status-action-btn.status-action-danger {
+  color: #fff;
+  background: var(--vscode-inputValidation-errorBorder, #f14c4c);
+  border-color: transparent;
+}
+
+.status-action-btn.status-action-danger:hover {
+  opacity: 0.85;
+}
+
+.status-action-btn[hidden] {
+  display: none;
+}
+
 .spacer { flex: 1; }
+
+#status-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .counter {
   font-family: var(--vscode-editor-font-family, 'Consolas', monospace);
@@ -66,6 +121,11 @@ body {
 .section-block-log {
   border-left: 3px solid var(--vscode-terminal-ansiYellow, #d7ba7d);
   padding-bottom: 8px;
+}
+
+body.focus-mode .section-block-serial,
+body.focus-mode .section-block-firmware {
+  display: none;
 }
 
 .section-heading {
@@ -271,10 +331,11 @@ body {
 .log-toolbar {
   margin-bottom: 8px;
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 .log-search-input {
-  flex: 1;
+  flex: 1 1 220px;
   min-width: 0;
 }
 
@@ -293,6 +354,17 @@ body {
   gap: 4px;
   cursor: pointer;
   user-select: none;
+}
+
+.options-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.options-action-btn {
+  flex: 0 0 auto;
 }
 
 .option-item-inline {

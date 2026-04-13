@@ -2,7 +2,7 @@
   "name": "serialagent-vscode",
   "displayName": "Serial Agent",
   "description": "Serial monitor, MCP bridge, and firmware actions for embedded debugging in VS Code.",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "publisher": "ranceowo",
   "license": "MIT",
   "icon": "media/SerialAgent.png",
@@ -98,6 +98,12 @@
         }
       },
       {
+        "command": "serialagent.toggleFocusMode",
+        "title": "Toggle Focus Mode",
+        "category": "Serial Agent",
+        "icon": "$(screen-full)"
+      },
+      {
         "command": "serialagent.keil.build",
         "title": "Build STM32 (Keil)",
         "category": "Serial Agent"
@@ -110,6 +116,11 @@
       {
         "command": "serialagent.keil.buildAndFlash",
         "title": "Build and Flash STM32",
+        "category": "Serial Agent"
+      },
+      {
+        "command": "serialagent.keil.runF7Action",
+        "title": "Run F7 Keil Action",
         "category": "Serial Agent"
       },
       {
@@ -163,6 +174,19 @@
           "scope": "resource",
           "markdownDescription": "If true, always treat non-zero UV4 exit code as build failure. This overrides compatibility behavior for warning-only C51 builds."
         },
+        "serialagent.keil.f7Action": {
+          "type": "string",
+          "default": "build",
+          "scope": "resource",
+          "enum": ["build", "flash", "buildAndFlash"],
+          "enumItemLabels": ["Build", "Flash", "Build+Flash"],
+          "markdownEnumDescriptions": [
+            "Run **Keil Build** only.",
+            "Run **JLink Flash** only.",
+            "Run **Keil Build** first, then **JLink Flash**."
+          ],
+          "markdownDescription": "Select the action triggered by `F7`."
+        },
         "serialagent.jlink.installDirectory": {
           "type": "string",
           "default": "C:\\Program Files (x86)\\SEGGER\\JLink",
@@ -196,6 +220,13 @@
         }
       }
     },
+    "keybindings": [
+      {
+        "command": "serialagent.keil.runF7Action",
+        "key": "f7",
+        "when": "true"
+      }
+    ],
     "menus": {
       "editor/title": [
         {
@@ -208,6 +239,11 @@
         {
           "command": "serialagent.openInTab",
           "group": "navigation",
+          "when": "view == serialagent.serialPanel"
+        },
+        {
+          "command": "serialagent.toggleFocusMode",
+          "group": "navigation@2",
           "when": "view == serialagent.serialPanel"
         }
       ]

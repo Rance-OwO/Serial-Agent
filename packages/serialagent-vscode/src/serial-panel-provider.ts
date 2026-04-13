@@ -26,6 +26,12 @@ interface QuickCommand {
   hexSend?: boolean;
 }
 
+interface SerialPanelUiState {
+  focusMode: boolean;
+  normalSendHeight?: number;
+  focusSendHeight?: number;
+}
+
 export class SerialPanelProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'serialagent.serialPanel';
   public static readonly panelViewType = 'serialagent.serialPanel.tab';
@@ -83,6 +89,12 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
     this._panel = undefined;
   }
 
+  public toggleFocusMode(force?: boolean): void {
+    const current = this._loadPanelUiState();
+    const focusMode = force ?? !current.focusMode;
+    this._persistPanelUiState({ focusMode });
+  }
+
   private _saveConfig(partial: Partial<SerialConfig>): void {
     const saved = this._context.globalState.get<SerialConfig>('serialConfig', { ...DEFAULT_CONFIG });
     void this._context.globalState.update('serialConfig', { ...saved, ...partial });
@@ -114,6 +126,21 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
 
   private _loadQuickCommands(): QuickCommand[] {
     return this._context.globalState.get<QuickCommand[]>('quickCommands', []);
+  }
+
+  private _loadPanelUiState(): SerialPanelUiState {
+    return this._context.globalState.get<SerialPanelUiState>('serialPanelUiState', {
+      focusMode: false,
+    });
+  }
+
+  private _persistPanelUiState(partial: Partial<SerialPanelUiState>): void {
+    const nextState: SerialPanelUiState = {
+      ...this._loadPanelUiState(),
+      ...partial,
+    };
+    void this._context.globalState.update('serialPanelUiState', nextState);
+    this.postMessage({ type: 'updateUiState', uiState: nextState });
   }
 
   private async _saveLogToFile(logLines: string[]): Promise<void> {
@@ -174,6 +201,7 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
       sendHistory: this._loadSendHistory(),
       serialProfiles: this._loadSerialProfiles(),
       quickCommands: this._loadQuickCommands(),
+      uiState: this._loadPanelUiState(),
     });
 
     if (this._serialManager.isConnected) {
@@ -281,6 +309,28 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
           break;
         }
 
+        case 'toggleFocusMode': {
+          const focusMode = typeof data.focusMode === 'boolean'
+            ? data.focusMode
+            : !this._loadPanelUiState().focusMode;
+          this._persistPanelUiState({ focusMode });
+          break;
+        }
+
+        case 'saveFocusLayout': {
+          const partial: Partial<SerialPanelUiState> = {};
+          if (typeof data.normalSendHeight === 'number') {
+            partial.normalSendHeight = data.normalSendHeight;
+          }
+          if (typeof data.focusSendHeight === 'number') {
+            partial.focusSendHeight = data.focusSendHeight;
+          }
+          if (Object.keys(partial).length > 0) {
+            this._persistPanelUiState(partial);
+          }
+          break;
+        }
+
         case 'keilBuild': {
           await vscode.commands.executeCommand('serialagent.keil.build');
           break;
@@ -337,9 +387,13 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
     <span class="spacer"></span>
     <span id="rx-count" class="counter" title="Received bytes">RX: 0</span>
     <span id="tx-count" class="counter" title="Sent bytes">TX: 0</span>
+    <div class="status-actions">
+      <button id="btn-focus-mode" class="status-action-btn" type="button" title="Toggle focus mode">Focus</button>
+      <button id="btn-focus-connect" class="status-action-btn" type="button" title="Toggle serial connection" hidden>Open</button>
+    </div>
   </div>
 
-  <div class="section-block section-block-serial">
+  <div id="serial-config-section" class="section-block section-block-serial">
     <div class="section-heading">
       <span class="section-title">COM Port Config</span>
     </div>
@@ -399,11 +453,10 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
 
     <div class="action-bar">
       <button id="btn-connect" class="btn-primary">Open</button>
-      <button id="btn-clear" class="btn-secondary">Clear</button>
     </div>
   </div>
 
-  <div class="section-block section-block-firmware">
+  <div id="firmware-config-section" class="section-block section-block-firmware">
     <div class="section-heading">
       <span class="section-title">Firmware Program Config</span>
     </div>
@@ -424,13 +477,10 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
 
     <div class="log-toolbar">
       <input id="log-search" class="log-search-input" type="text" placeholder="Search or filter logs" />
-      <label class="option-item option-item-inline" title="Follow the latest log lines automatically">
-        <input type="checkbox" id="opt-auto-scroll" checked />
-        <span>Auto Scroll</span>
-      </label>
       <button id="btn-freeze" class="btn-secondary btn-compact" type="button">Freeze</button>
       <button id="btn-copy-log" class="btn-secondary btn-compact" type="button">Copy</button>
       <button id="btn-save-log" class="btn-secondary btn-compact" type="button">Save</button>
+      <button id="btn-clear" class="btn-secondary btn-compact" type="button">Clear</button>
     </div>
 
     <div class="options-bar">
@@ -446,6 +496,13 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
         <input type="checkbox" id="opt-echo" checked />
         <span>Echo</span>
       </label>
+      <label class="option-item" title="Follow the latest log lines automatically">
+        <input type="checkbox" id="opt-auto-scroll" checked />
+        <span>Auto Scroll</span>
+      </label>
+      <div class="options-actions">
+        <button id="btn-log-focus-mode" class="status-action-btn options-action-btn" type="button" title="Toggle focus mode">Focus</button>
+      </div>
     </div>
   </div>
 
