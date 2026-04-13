@@ -2,7 +2,7 @@
   "name": "serialagent-vscode",
   "displayName": "Serial Agent",
   "description": "Serial monitor, MCP bridge, and firmware actions for embedded debugging in VS Code.",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "publisher": "ranceowo",
   "license": "MIT",
   "icon": "media/SerialAgent.png",
