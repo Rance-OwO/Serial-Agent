@@ -88,6 +88,7 @@
   const sendSection = document.getElementById('send-section');
   const contentWrapper = document.querySelector('.content-wrapper');
 
+  const quickCommandBar = document.querySelector('.quick-command-bar');
   const quickCommandList = document.getElementById('quick-command-list');
   const quickCommandManageList = document.getElementById('quick-command-manage-list');
   /** @type {HTMLInputElement | null} */
@@ -512,12 +513,9 @@
       return;
     }
 
+    quickCommandBar?.classList.toggle('hidden', quickCommands.length === 0);
     quickCommandList.innerHTML = '';
     if (quickCommands.length === 0) {
-      const hint = document.createElement('div');
-      hint.className = 'quick-command-empty';
-      hint.textContent = 'Add quick commands below for one-click send.';
-      quickCommandList.appendChild(hint);
       return;
     }
 

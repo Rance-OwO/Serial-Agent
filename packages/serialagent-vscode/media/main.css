@@ -489,6 +489,10 @@ body.focus-mode .section-block-firmware {
   min-height: 34px;
 }
 
+.quick-command-bar.hidden {
+  display: none;
+}
+
 .quick-command-list {
   display: flex;
   gap: 8px;
