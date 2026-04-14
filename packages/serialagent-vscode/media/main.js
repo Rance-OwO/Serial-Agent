@@ -54,9 +54,22 @@
   const keilBuildBtn = document.getElementById('btn-keil-build');
   const keilFlashBtn = document.getElementById('btn-keil-flash');
   const keilBuildFlashBtn = document.getElementById('btn-keil-build-flash');
-  const keilCpuBtn = document.getElementById('btn-keil-cpu');
-  const keilConfigBtn = document.getElementById('btn-keil-config');
+  const keilConfigInlineBtn = document.getElementById('btn-keil-config-inline');
+  const keilCheckBtn = document.getElementById('btn-keil-check');
+  const keilSettingsBtn = document.getElementById('btn-keil-settings');
   const keilStatusEl = document.getElementById('keil-status');
+  const firmwareSummaryStatusEl = document.getElementById('firmware-summary-status');
+  const firmwareSummaryBuildEl = document.getElementById('firmware-summary-build');
+  const firmwareSummaryFlashEl = document.getElementById('firmware-summary-flash');
+  const firmwareSummaryHintEl = document.getElementById('firmware-summary-hint');
+  const firmwareSummaryWarningsEl = document.getElementById('firmware-summary-warnings');
+  const firmwareConfigDrawer = document.getElementById('firmware-config-drawer');
+  const firmwareDrawerTitleEl = document.getElementById('firmware-drawer-route-title');
+  const firmwareDrawerBackBtn = document.getElementById('btn-firmware-drawer-back');
+  const firmwareDrawerCloseBtn = document.getElementById('btn-firmware-drawer-close');
+  const firmwareRouteViews = Array.from(document.querySelectorAll('.firmware-config-route'));
+  const firmwareRouteButtons = Array.from(document.querySelectorAll('[data-firmware-route]'));
+  const firmwareActionButtons = Array.from(document.querySelectorAll('[data-firmware-action]'));
 
   /** @type {HTMLInputElement | null} */
   const optTimestamp = /** @type {HTMLInputElement} */ (document.getElementById('opt-timestamp'));
@@ -111,10 +124,16 @@
   let focusMode = false;
   let normalSendHeight;
   let focusSendHeight;
+  let firmwareDrawerOpen = false;
+  let firmwareDrawerRoute = 'home';
+  let firmwareDrawerStack = ['home'];
+  let firmwareConfigSnapshot = null;
+  let keilBusy = false;
 
   restoreWebviewState();
 
   bindSerialActions();
+  bindFirmwareDrawerActions();
   bindLogActions();
   bindSendActions();
   bindQuickCommandActions();
@@ -178,11 +197,14 @@
     keilBuildFlashBtn?.addEventListener('click', () => {
       vscode.postMessage({ type: 'keilBuildFlash' });
     });
-    keilCpuBtn?.addEventListener('click', () => {
-      vscode.postMessage({ type: 'keilSelectCpu' });
+    keilConfigInlineBtn?.addEventListener('click', () => {
+      openFirmwareDrawer('home');
     });
-    keilConfigBtn?.addEventListener('click', () => {
-      vscode.postMessage({ type: 'keilOpenConfig' });
+    keilCheckBtn?.addEventListener('click', () => {
+      vscode.postMessage({ type: 'keilRunConfigCheck' });
+    });
+    keilSettingsBtn?.addEventListener('click', () => {
+      vscode.postMessage({ type: 'keilOpenAdvancedSettings' });
     });
 
     optTimestamp?.addEventListener('change', () => {
@@ -204,6 +226,48 @@
       lineEndingSelect,
     ].forEach((element) => {
       element?.addEventListener('change', persistCurrentConfigDraft);
+    });
+  }
+
+  function bindFirmwareDrawerActions() {
+    firmwareDrawerBackBtn?.addEventListener('click', () => {
+      navigateFirmwareDrawerBack();
+    });
+
+    firmwareDrawerCloseBtn?.addEventListener('click', () => {
+      closeFirmwareDrawer(true);
+    });
+
+    firmwareRouteButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        navigateFirmwareDrawer(button.getAttribute('data-firmware-route') || 'home');
+      });
+    });
+
+    firmwareActionButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        if (keilBusy) {
+          return;
+        }
+
+        const action = button.getAttribute('data-firmware-action');
+        if (!action) {
+          return;
+        }
+
+        vscode.postMessage({
+          type: 'firmwareConfigAction',
+          action,
+          route: firmwareDrawerRoute,
+        });
+      });
+    });
+
+    window.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && firmwareDrawerOpen) {
+        event.preventDefault();
+        closeFirmwareDrawer(true);
+      }
     });
   }
 
@@ -458,6 +522,13 @@
     focusSendHeight = typeof uiState?.focusSendHeight === 'number'
       ? uiState.focusSendHeight
       : focusSendHeight;
+    firmwareDrawerOpen = !!uiState?.firmwareDrawerOpen && !focusMode;
+    firmwareDrawerRoute = normalizeFirmwareDrawerRoute(uiState?.firmwareDrawerRoute);
+    firmwareDrawerStack = normalizeFirmwareDrawerStack(
+      uiState?.firmwareDrawerStack,
+      firmwareDrawerOpen ? firmwareDrawerRoute : 'home',
+      firmwareDrawerOpen,
+    );
 
     document.body.classList.toggle('focus-mode', focusMode);
     if (focusConnectBtn) {
@@ -466,6 +537,258 @@
     updateFocusButton();
     updateConnectionButtons();
     applyCurrentLayout();
+    renderFirmwareDrawer();
+  }
+
+  function normalizeFirmwareDrawerRoute(route) {
+    switch (route) {
+      case 'build':
+      case 'flash':
+      case 'jlink':
+      case 'stlink':
+      case 'openocd':
+        return route;
+      case 'home':
+      default:
+        return 'home';
+    }
+  }
+
+  function normalizeFirmwareDrawerStack(stack, fallbackRoute, open) {
+    if (!open) {
+      return ['home'];
+    }
+
+    const route = normalizeFirmwareDrawerRoute(fallbackRoute);
+    if (!Array.isArray(stack) || stack.length === 0) {
+      return route === 'home' ? ['home'] : ['home', route];
+    }
+
+    const normalized = stack
+      .map((item) => normalizeFirmwareDrawerRoute(item))
+      .filter((item, index, routes) => item !== routes[index - 1]);
+
+    if (normalized.length === 0) {
+      return route === 'home' ? ['home'] : ['home', route];
+    }
+
+    if (normalized[0] !== 'home') {
+      normalized.unshift('home');
+    }
+
+    if (normalized[normalized.length - 1] !== route) {
+      normalized.push(route);
+    }
+
+    return normalized;
+  }
+
+  function getFirmwareDrawerTitle(route) {
+    switch (route) {
+      case 'build':
+        return 'Build Essentials';
+      case 'flash':
+        return 'Flash Essentials';
+      case 'jlink':
+        return 'JLink';
+      case 'stlink':
+        return 'ST-Link';
+      case 'openocd':
+        return 'OpenOCD';
+      case 'home':
+      default:
+        return 'Home';
+    }
+  }
+
+  function persistFirmwareDrawerState() {
+    vscode.postMessage({
+      type: 'savePanelUiState',
+      firmwareDrawerOpen,
+      firmwareDrawerRoute,
+      firmwareDrawerStack,
+    });
+  }
+
+  function renderFirmwareDrawer() {
+    const open = firmwareDrawerOpen && !focusMode;
+    document.body.classList.toggle('firmware-config-open', open);
+    firmwareConfigDrawer?.classList.toggle('hidden', !open);
+
+    if (firmwareDrawerTitleEl) {
+      firmwareDrawerTitleEl.textContent = getFirmwareDrawerTitle(firmwareDrawerRoute);
+    }
+
+    firmwareRouteViews.forEach((view) => {
+      const route = view.id.replace('firmware-route-', '');
+      view.classList.toggle('hidden', route !== firmwareDrawerRoute);
+    });
+
+    firmwareRouteButtons.forEach((button) => {
+      const isActive = button.getAttribute('data-firmware-route') === firmwareDrawerRoute;
+      button.classList.toggle('is-active', isActive);
+      button.setAttribute('aria-current', isActive ? 'page' : 'false');
+    });
+
+    if (firmwareDrawerBackBtn) {
+      firmwareDrawerBackBtn.disabled = !open || firmwareDrawerStack.length <= 1;
+    }
+
+    updateFirmwareActionButtons();
+  }
+
+  function updateFirmwareActionButtons() {
+    firmwareActionButtons.forEach((button) => {
+      const lockOnBusy = button.getAttribute('data-keil-busy-lock') === 'true';
+      button.disabled = lockOnBusy ? keilBusy : false;
+    });
+  }
+
+  function setFirmwareDrawerState(nextOpen, nextRoute, nextStack, options) {
+    const route = normalizeFirmwareDrawerRoute(nextRoute);
+    const open = !!nextOpen && !focusMode;
+    firmwareDrawerOpen = open;
+    firmwareDrawerRoute = open ? route : 'home';
+    firmwareDrawerStack = normalizeFirmwareDrawerStack(
+      nextStack,
+      open ? route : 'home',
+      open,
+    );
+    renderFirmwareDrawer();
+    if (options?.persist !== false) {
+      persistFirmwareDrawerState();
+    }
+    if (options?.focusLog) {
+      focusLogArea();
+    }
+  }
+
+  function openFirmwareDrawer(route) {
+    const targetRoute = normalizeFirmwareDrawerRoute(route);
+    const nextStack = targetRoute === 'home' ? ['home'] : ['home', targetRoute];
+    setFirmwareDrawerState(true, targetRoute, nextStack, { persist: true });
+  }
+
+  function navigateFirmwareDrawer(route) {
+    const targetRoute = normalizeFirmwareDrawerRoute(route);
+    if (!firmwareDrawerOpen) {
+      openFirmwareDrawer(targetRoute);
+      return;
+    }
+
+    if (targetRoute === 'home') {
+      setFirmwareDrawerState(true, 'home', ['home'], { persist: true });
+      return;
+    }
+
+    const currentStack = firmwareDrawerStack.slice();
+    if (currentStack[currentStack.length - 1] === targetRoute) {
+      return;
+    }
+
+    currentStack.push(targetRoute);
+    setFirmwareDrawerState(true, targetRoute, currentStack, { persist: true });
+  }
+
+  function navigateFirmwareDrawerBack() {
+    if (!firmwareDrawerOpen || firmwareDrawerStack.length <= 1) {
+      return;
+    }
+
+    const nextStack = firmwareDrawerStack.slice(0, -1);
+    const nextRoute = nextStack[nextStack.length - 1] || 'home';
+    setFirmwareDrawerState(true, nextRoute, nextStack, { persist: true });
+  }
+
+  function closeFirmwareDrawer(focusLog) {
+    setFirmwareDrawerState(false, 'home', ['home'], {
+      persist: true,
+      focusLog: !!focusLog,
+    });
+  }
+
+  function focusLogArea() {
+    if (!(logArea instanceof HTMLElement)) {
+      return;
+    }
+
+    try {
+      logArea.focus({ preventScroll: true });
+    } catch {
+      logArea.focus();
+    }
+  }
+
+  function formatFirmwarePath(value, emptyText) {
+    if (!value) {
+      return emptyText;
+    }
+    const normalized = String(value).replace(/\\/g, '/');
+    const parts = normalized.split('/');
+    return parts[parts.length - 1] || emptyText;
+  }
+
+  function setFirmwareValue(id, text) {
+    const element = document.getElementById(id);
+    if (element) {
+      element.textContent = text;
+    }
+  }
+
+  function renderFirmwareSnapshot(snapshot) {
+    firmwareConfigSnapshot = snapshot || null;
+    if (!firmwareConfigSnapshot) {
+      return;
+    }
+
+    const keil = firmwareConfigSnapshot.keil || {};
+    const flash = firmwareConfigSnapshot.flash || {};
+    const jlink = flash.jlink || {};
+    const stlink = flash.stlink || {};
+    const openocd = flash.openocd || {};
+
+    setFirmwareValue('fw-build-uv4', formatFirmwarePath(keil.uv4Path, 'Choose UV4.exe'));
+    setFirmwareValue('fw-build-project', formatFirmwarePath(keil.projectFile, 'Choose .uvprojx / .uvproj'));
+    setFirmwareValue('fw-build-target', keil.target || 'Choose target from the project');
+
+    setFirmwareValue(
+      'fw-flash-f7',
+      keil.f7Action === 'buildAndFlash'
+        ? 'Build+Flash'
+        : (keil.f7Action === 'flash' ? 'Flash' : 'Build'),
+    );
+    setFirmwareValue('fw-flash-method', getFirmwareMethodLabel(flash.method));
+
+    setFirmwareValue('fw-jlink-install', formatFirmwarePath(jlink.installDirectory, 'Choose JLink install directory'));
+    setFirmwareValue('fw-jlink-device', jlink.device || 'Select JLink CPU');
+    setFirmwareValue('fw-jlink-interface', jlink.interface || 'SWD');
+    setFirmwareValue('fw-jlink-speed', jlink.speed ? `${jlink.speed} kHz` : 'Choose JLink speed');
+    setFirmwareValue('fw-jlink-base', jlink.baseAddr || '0x08000000');
+
+    setFirmwareValue('fw-stlink-exe', formatFirmwarePath(stlink.exePath, 'Choose STM32_Programmer_CLI.exe'));
+    setFirmwareValue('fw-stlink-interface', stlink.interface || 'SWD');
+    setFirmwareValue('fw-stlink-speed', stlink.speed ? `${stlink.speed} kHz` : 'Choose ST-Link speed');
+    setFirmwareValue('fw-stlink-base', stlink.baseAddr || '0x08000000');
+    setFirmwareValue('fw-stlink-reset', stlink.resetMode || 'default');
+    setFirmwareValue('fw-stlink-run-after', stlink.runAfterProgram ? 'Yes' : 'No');
+
+    setFirmwareValue('fw-openocd-exe', formatFirmwarePath(openocd.exePath, 'Choose openocd.exe'));
+    setFirmwareValue('fw-openocd-target', openocd.target ? `${openocd.target}.cfg` : 'Choose target .cfg');
+    setFirmwareValue('fw-openocd-interface', openocd.interface ? `${openocd.interface}.cfg` : 'Choose interface .cfg');
+    setFirmwareValue('fw-openocd-sequence', openocd.sequence || 'helper');
+    setFirmwareValue('fw-openocd-base', openocd.baseAddr || '0x08000000');
+    setFirmwareValue('fw-openocd-run-after', openocd.runAfterProgram ? 'Yes' : 'No');
+  }
+
+  function getFirmwareMethodLabel(method) {
+    switch (method) {
+      case 'stlink':
+        return 'ST-Link';
+      case 'openocd':
+        return 'OpenOCD';
+      default:
+        return 'JLink';
+    }
   }
 
   function collectCurrentConfig() {
@@ -769,6 +1092,38 @@
     return (bytes / 1048576).toFixed(1) + ' MB';
   }
 
+  function renderFirmwareSummary(summary) {
+    if (!summary) {
+      return;
+    }
+
+    if (firmwareSummaryStatusEl) {
+      firmwareSummaryStatusEl.textContent = summary.statusText || 'Build/Flash summary unavailable';
+      firmwareSummaryStatusEl.classList.toggle('is-ready', !!summary.ready);
+      firmwareSummaryStatusEl.classList.toggle('is-warning', !summary.ready);
+    }
+    if (firmwareSummaryBuildEl) {
+      firmwareSummaryBuildEl.textContent = summary.buildText || 'Build: waiting for summary...';
+    }
+    if (firmwareSummaryFlashEl) {
+      firmwareSummaryFlashEl.textContent = summary.flashText || 'Flash: waiting for summary...';
+    }
+    if (firmwareSummaryHintEl) {
+      firmwareSummaryHintEl.textContent = summary.hintText || 'Use Configure to start the guided setup.';
+    }
+    if (firmwareSummaryWarningsEl) {
+      const warnings = Array.isArray(summary.warnings) ? summary.warnings : [];
+      firmwareSummaryWarningsEl.innerHTML = '';
+      firmwareSummaryWarningsEl.classList.toggle('hidden', warnings.length === 0);
+      warnings.forEach((item) => {
+        const line = document.createElement('div');
+        line.className = 'firmware-summary-warning';
+        line.textContent = item;
+        firmwareSummaryWarningsEl.appendChild(line);
+      });
+    }
+  }
+
   function formatPortLabel(port) {
     const driverLabel = normalizeDriverLabel(port.driverLabel || port.friendlyName);
     if (driverLabel) {
@@ -898,6 +1253,8 @@
           renderQuickCommands();
         }
         applyUiState(message.uiState || {});
+        renderFirmwareSnapshot(message.firmwareConfigSnapshot);
+        renderFirmwareSummary(message.firmwareConfigSummary);
         updateEmptyState();
         break;
       }
@@ -909,13 +1266,25 @@
 
       case 'keilBusy': {
         const busy = !!message.busy;
-        [keilBuildBtn, keilFlashBtn, keilBuildFlashBtn, keilCpuBtn, keilConfigBtn].forEach((element) => {
+        keilBusy = busy;
+        [keilBuildBtn, keilFlashBtn, keilBuildFlashBtn, keilCpuBtn, keilConfigBtn, keilConfigInlineBtn, keilCheckBtn, keilSettingsBtn].forEach((element) => {
           if (element) { element.disabled = busy; }
         });
+        updateFirmwareActionButtons();
         if (keilStatusEl) {
           const taskName = message.task || 'Task';
           keilStatusEl.textContent = busy ? `Keil: Running ${taskName}...` : 'Keil: Idle';
         }
+        break;
+      }
+
+      case 'firmwareConfigSummary': {
+        renderFirmwareSummary(message.summary);
+        break;
+      }
+
+      case 'firmwareConfigSnapshot': {
+        renderFirmwareSnapshot(message.snapshot);
         break;
       }
     }
@@ -925,6 +1294,7 @@
   updateHistorySelect();
   updateConnectionButtons();
   applyUiState({});
+  renderFirmwareDrawer();
   updateFreezeButton();
   updateEmptyState();
 })();

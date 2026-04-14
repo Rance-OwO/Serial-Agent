@@ -4,6 +4,11 @@ import * as os from 'os';
 import * as path from 'path';
 import { spawn, spawnSync } from 'child_process';
 import iconv from 'iconv-lite';
+import {
+  describeConfigurationTarget,
+  updateSerialAgentSetting,
+} from './config-target';
+import { FirmwareConfigSnapshot } from './firmware-config-model';
 import { KeilConfigCheckResult, KeilTaskResult } from './types';
 
 type JLinkInterface = 'SWD' | 'JTAG';
@@ -75,7 +80,124 @@ export class KeilToolchainService {
     vscode.commands.executeCommand('workbench.action.openSettings', 'serialagent.');
   }
 
-  async selectJLinkDeviceFromProject(): Promise<void> {
+  getWorkspaceRootPath(): string | undefined {
+    return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  }
+
+  toWorkspaceRelativePath(filePath: string): string {
+    const workspaceRoot = this.getWorkspaceRootPath();
+    if (!workspaceRoot) {
+      return filePath;
+    }
+
+    const normalizedRoot = path.resolve(workspaceRoot);
+    const normalizedPath = path.resolve(filePath);
+    const relative = path.relative(normalizedRoot, normalizedPath);
+    if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+      return filePath;
+    }
+
+    return relative.replace(/\\/g, '/');
+  }
+
+  getConfigSnapshot(): FirmwareConfigSnapshot {
+    return {
+      keil: {
+        projectFile: this.getConfigValue<string>('keil.projectFile', '').trim(),
+        target: this.getConfigValue<string>('keil.target', '').trim(),
+        uv4Path: stripWrappedQuotes(this.getConfigValue<string>('keil.uv4Path', '').trim()),
+        armcc5Path: stripWrappedQuotes(this.getConfigValue<string>('keil.armcc5Path', '').trim()),
+        resultPolicy: this.getConfigValue<string>('keil.resultPolicy', 'log-and-artifact').trim(),
+        strictExitCode: this.getConfigValue<boolean>('keil.strictExitCode', false),
+        f7Action: this.getConfigValue<'build' | 'flash' | 'buildAndFlash'>('keil.f7Action', 'build'),
+      },
+      flash: {
+        method: this.resolveFlashMethod(),
+        jlink: {
+          installDirectory: stripWrappedQuotes(this.getConfigValue<string>('jlink.installDirectory', '').trim()),
+          device: this.getConfigValue<string>('jlink.device', '').trim(),
+          interface: this.getConfigValue<string>('jlink.interface', 'SWD').trim(),
+          speed: this.getConfigValue<number>('jlink.speed', 4000),
+          baseAddr: this.getConfigValue<string>('jlink.baseAddr', '0x08000000').trim(),
+        },
+        stlink: {
+          exePath: stripWrappedQuotes(this.getConfigValue<string>('stlink.exePath', '').trim()),
+          interface: this.getConfigValue<string>('stlink.interface', 'SWD').trim(),
+          speed: this.getConfigValue<number>('stlink.speed', 4000),
+          baseAddr: this.getConfigValue<string>('stlink.baseAddr', '0x08000000').trim(),
+          resetMode: this.getConfigValue<string>('stlink.resetMode', 'default').trim(),
+          runAfterProgram: this.getConfigValue<boolean>('stlink.runAfterProgram', true),
+          externalLoader: this.getConfigValue<string>('stlink.externalLoader', '').trim(),
+          optionBytesFile: this.getConfigValue<string>('stlink.optionBytesFile', '').trim(),
+          additionalArgs: this.getConfigValue<string>('stlink.additionalArgs', '').trim(),
+        },
+        openocd: {
+          exePath: stripWrappedQuotes(this.getConfigValue<string>('openocd.exePath', '').trim()),
+          interface: this.getConfigValue<string>('openocd.interface', '').trim(),
+          target: this.getConfigValue<string>('openocd.target', '').trim(),
+          baseAddr: this.getConfigValue<string>('openocd.baseAddr', '0x08000000').trim(),
+          runAfterProgram: this.getConfigValue<boolean>('openocd.runAfterProgram', false),
+          sequence: this.getConfigValue<string>('openocd.sequence', 'helper').trim(),
+        },
+      },
+    };
+  }
+
+  async listProjectFiles(): Promise<string[]> {
+    const result = new Set<string>();
+    const configured = stripWrappedQuotes(this.getConfigValue<string>('keil.projectFile', '').trim());
+    if (configured) {
+      const resolved = this.resolveProjectFileInput(configured);
+      if (resolved && fs.existsSync(resolved)) {
+        result.add(resolved);
+      }
+    }
+
+    const folders = vscode.workspace.workspaceFolders;
+    if (!folders?.length) {
+      return Array.from(result).sort((a, b) => a.localeCompare(b));
+    }
+
+    const matches = await vscode.workspace.findFiles(
+      new vscode.RelativePattern(folders[0], '**/*.{uvprojx,uvproj}'),
+      '**/{node_modules,.git,_Reference}/**',
+      50,
+    );
+    for (const match of matches) {
+      result.add(match.fsPath);
+    }
+
+    return Array.from(result).sort((a, b) => a.localeCompare(b));
+  }
+
+  async listProjectTargets(projectFileInput?: string): Promise<string[]> {
+    const projectFile = projectFileInput
+      ? this.resolveProjectFileInput(projectFileInput)
+      : await this.resolveProjectFile();
+    if (!projectFile || !fs.existsSync(projectFile)) {
+      return [];
+    }
+
+    const meta = this.parseUvprojx(projectFile);
+    return meta.targets
+      .map((target) => target.name)
+      .filter((name) => name.trim().length > 0);
+  }
+
+  listOpenOcdConfigs(group: 'interface' | 'target'): string[] {
+    const scriptsDir = this.resolveOpenOcdScriptsDir();
+    const configDir = path.join(scriptsDir, group);
+    if (!fs.existsSync(configDir) || !fs.statSync(configDir).isDirectory()) {
+      return [];
+    }
+
+    return fs.readdirSync(configDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && /\.cfg$/i.test(entry.name))
+      .map((entry) => entry.name.replace(/\.cfg$/i, ''))
+      .sort((a, b) => a.localeCompare(b));
+  }
+
+  async selectJLinkDeviceFromProject(): Promise<boolean> {
     const projectFile = await this.resolveProjectFile();
     const projectMeta = this.parseUvprojx(projectFile);
 
@@ -98,19 +220,14 @@ export class KeilToolchainService {
     });
 
     if (!selected) {
-      return;
+      return false;
     }
 
-    const conf = vscode.workspace.getConfiguration('serialagent');
-    const hasWorkspace = (vscode.workspace.workspaceFolders?.length || 0) > 0;
-
-    if (hasWorkspace) {
-      await conf.update('jlink.device', selected.label, vscode.ConfigurationTarget.Workspace);
-    }
-    await conf.update('jlink.device', selected.label, vscode.ConfigurationTarget.Global);
+    const target = await updateSerialAgentSetting('jlink.device', selected.label);
 
     this.output.appendLine(`[JLink] Selected CPU: ${selected.label}`);
-    this.output.appendLine(`[JLink] Saved to: ${hasWorkspace ? 'Workspace + User' : 'User'}`);
+    this.output.appendLine(`[JLink] Saved to: ${describeConfigurationTarget(target)}`);
+    return true;
   }
 
   async build(): Promise<BuildResult> {
@@ -742,6 +859,17 @@ export class KeilToolchainService {
     const picked = matches[0].fsPath;
     this.output.appendLine(`[Keil] Auto-selected project: ${picked}`);
     return picked;
+  }
+
+  private resolveProjectFileInput(projectFileInput: string): string | undefined {
+    const normalized = stripWrappedQuotes(projectFileInput.trim());
+    if (!normalized) {
+      return undefined;
+    }
+
+    return path.isAbsolute(normalized)
+      ? normalized
+      : this.joinWorkspacePath(normalized);
   }
 
   private resolveOptionalWorkspaceFile(configKey: string, stlinkExePath?: string): string | undefined {

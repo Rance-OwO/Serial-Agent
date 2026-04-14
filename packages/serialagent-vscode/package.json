@@ -2,7 +2,7 @@
   "name": "serialagent-vscode",
   "displayName": "Serial Agent",
   "description": "Serial monitor, MCP bridge, and firmware actions for embedded debugging in VS Code.",
-  "version": "1.1.2",
+  "version": "1.1.8",
   "publisher": "ranceowo",
   "license": "MIT",
   "icon": "media/SerialAgent.png",
@@ -110,7 +110,7 @@
       },
       {
         "command": "serialagent.keil.flash",
-        "title": "Flash STM32 (JLink)",
+        "title": "Flash STM32 (Configured Flasher)",
         "category": "Serial Agent"
       },
       {
@@ -125,7 +125,17 @@
       },
       {
         "command": "serialagent.keil.openSettings",
-        "title": "Open Keil/JLink Settings",
+        "title": "Open Keil/Flash Settings",
+        "category": "Serial Agent"
+      },
+      {
+        "command": "serialagent.keil.configureInteractive",
+        "title": "Open Build/Flash Config Panel",
+        "category": "Serial Agent"
+      },
+      {
+        "command": "serialagent.keil.checkConfig",
+        "title": "Check Build/Flash Config",
         "category": "Serial Agent"
       },
       {
@@ -165,7 +175,10 @@
           "type": "string",
           "default": "log-and-artifact",
           "scope": "resource",
-          "enum": ["log-and-artifact", "strict-exit-code"],
+          "enum": [
+            "log-and-artifact",
+            "strict-exit-code"
+          ],
           "markdownDescription": "Keil build success policy. `log-and-artifact`: prefer final 'Error(s)/Warning(s)' summary plus artifact existence (recommended for C51). `strict-exit-code`: require UV4 exit code 0."
         },
         "serialagent.keil.strictExitCode": {
@@ -178,8 +191,22 @@
           "type": "string",
           "default": "build",
           "scope": "resource",
-          "enum": ["build", "buildAndFlash"],
-          "markdownDescription": "Action triggered by `F7`. `build`: run Keil build only. `buildAndFlash`: build first, then flash via JLink."
+          "enum": [
+            "build",
+            "buildAndFlash"
+          ],
+          "markdownDescription": "Action triggered by `F7`. `build`: run Keil build only. `buildAndFlash`: build first, then flash via the configured flasher."
+        },
+        "serialagent.flash.method": {
+          "type": "string",
+          "default": "jlink",
+          "scope": "resource",
+          "enum": [
+            "jlink",
+            "stlink",
+            "openocd"
+          ],
+          "markdownDescription": "Firmware flash backend. `jlink` keeps the current SEGGER JLink flow. `stlink` uses `STM32_Programmer_CLI.exe`. `openocd` uses the official `openocd.exe` plus required interface/target configs."
         },
         "serialagent.jlink.installDirectory": {
           "type": "string",
@@ -197,7 +224,10 @@
           "type": "string",
           "default": "SWD",
           "scope": "resource",
-          "enum": ["SWD", "JTAG"],
+          "enum": [
+            "SWD",
+            "JTAG"
+          ],
           "markdownDescription": "JLink interface type."
         },
         "serialagent.jlink.speed": {
@@ -211,6 +241,110 @@
           "default": "0x08000000",
           "scope": "resource",
           "markdownDescription": "Base address used when flashing .bin file via JLink loadfile."
+        },
+        "serialagent.stlink.exePath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "Required when `serialagent.flash.method = stlink`. Full path to `STM32_Programmer_CLI.exe`."
+        },
+        "serialagent.stlink.interface": {
+          "type": "string",
+          "default": "SWD",
+          "scope": "resource",
+          "enum": [
+            "SWD",
+            "JTAG"
+          ],
+          "markdownDescription": "ST-Link interface type."
+        },
+        "serialagent.stlink.speed": {
+          "type": "number",
+          "default": 4000,
+          "scope": "resource",
+          "markdownDescription": "ST-Link speed in kHz."
+        },
+        "serialagent.stlink.baseAddr": {
+          "type": "string",
+          "default": "0x08000000",
+          "scope": "resource",
+          "markdownDescription": "Base address used when flashing .bin file via STM32CubeProgrammer."
+        },
+        "serialagent.stlink.resetMode": {
+          "type": "string",
+          "default": "default",
+          "scope": "resource",
+          "enum": [
+            "default",
+            "SWrst",
+            "HWrst",
+            "Crst"
+          ],
+          "markdownDescription": "Optional reset mode passed to STM32CubeProgrammer. `default` leaves the tool default unchanged."
+        },
+        "serialagent.stlink.runAfterProgram": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "markdownDescription": "If true, STM32CubeProgrammer adds `--go` after a successful flash."
+        },
+        "serialagent.stlink.externalLoader": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "markdownDescription": "Optional external loader path. Supports absolute path, workspace-relative path, or `<stlink>/Loader.stldr`."
+        },
+        "serialagent.stlink.optionBytesFile": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "markdownDescription": "Optional ini-style option bytes file. Each non-empty line should be `key=value`."
+        },
+        "serialagent.stlink.additionalArgs": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "markdownDescription": "Optional extra CLI arguments appended to STM32CubeProgrammer."
+        },
+        "serialagent.openocd.exePath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "Required when `serialagent.flash.method = openocd`. Full path to `openocd.exe` from an official OpenOCD package."
+        },
+        "serialagent.openocd.interface": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "markdownDescription": "Required OpenOCD interface short name, for example `cmsis-dap`. Do not include directory prefixes."
+        },
+        "serialagent.openocd.target": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "markdownDescription": "Required OpenOCD target short name, for example `stm32f4x`. Do not include directory prefixes."
+        },
+        "serialagent.openocd.baseAddr": {
+          "type": "string",
+          "default": "0x08000000",
+          "scope": "resource",
+          "markdownDescription": "Base address used when flashing .bin file via OpenOCD `program`."
+        },
+        "serialagent.openocd.runAfterProgram": {
+          "type": "boolean",
+          "default": false,
+          "scope": "resource",
+          "markdownDescription": "If true, OpenOCD appends `reset run` after a successful flash. Default is false to avoid extra reset cycles."
+        },
+        "serialagent.openocd.sequence": {
+          "type": "string",
+          "default": "helper",
+          "scope": "resource",
+          "enum": [
+            "helper",
+            "low-reset"
+          ],
+          "markdownDescription": "OpenOCD flash sequence. `helper` uses the standard `program` helper. `low-reset` is an experimental explicit sequence that aims to reduce visible restart count on some boards."
         }
       }
     },
@@ -251,6 +385,7 @@
     "watch": "tsc -p tsconfig.json -w"
   },
   "dependencies": {
+    "iconv-lite": "^0.7.2",
     "serialport": "^12.0.0"
   },
   "repository": {

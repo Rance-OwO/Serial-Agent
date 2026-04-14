@@ -1,5 +1,14 @@
 import * as vscode from 'vscode';
 import { BridgeServer } from './bridge-server';
+import {
+  buildFirmwareConfigSummary,
+  FirmwareConfigAction,
+  FirmwareConfigRoute,
+  FirmwareConfigUiState,
+} from './firmware-config-model';
+import {
+  FirmwareConfigController,
+} from './firmware-config-wizard';
 import { resolveKeilF7Command } from './keil-f7-action';
 import { KeilToolchainService } from './keil-toolchain';
 import { SerialPanelProvider } from './serial-panel-provider';
@@ -17,6 +26,14 @@ let statusBarItem: vscode.StatusBarItem;
 let bridgeStatusBarItem: vscode.StatusBarItem;
 let bridgeRunning = false;
 let keilTaskRunning = false;
+
+const SERIAL_PANEL_UI_STATE_KEY = 'serialPanelUiState';
+
+interface SerialPanelUiState extends FirmwareConfigUiState {
+  focusMode: boolean;
+  normalSendHeight?: number;
+  focusSendHeight?: number;
+}
 
 async function waitForWebviewPanelToBeActive(panel: vscode.WebviewPanel): Promise<void> {
   if (panel.active) {
@@ -86,6 +103,36 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(keilOutputChannel);
 
   const provider = new SerialPanelProvider(context, serialManager, updateStatusBar);
+  const readPanelUiState = (): SerialPanelUiState => context.globalState.get<SerialPanelUiState>(
+    SERIAL_PANEL_UI_STATE_KEY,
+    {
+      focusMode: false,
+      firmwareDrawerOpen: false,
+      firmwareDrawerRoute: 'home',
+      firmwareDrawerStack: ['home'],
+    },
+  );
+  const persistPanelUiState = async (
+    partial: Partial<SerialPanelUiState>,
+  ): Promise<SerialPanelUiState> => {
+    const nextState: SerialPanelUiState = {
+      ...readPanelUiState(),
+      ...partial,
+    };
+    await context.globalState.update(SERIAL_PANEL_UI_STATE_KEY, nextState);
+    provider.postMessage({ type: 'updateUiState', uiState: nextState });
+    return nextState;
+  };
+  const refreshFirmwareConfigState = async () => {
+    const snapshot = keilToolchain.getConfigSnapshot();
+    const summary = buildFirmwareConfigSummary(
+      snapshot,
+      await keilToolchain.checkConfig(),
+    );
+    provider.setFirmwareConfigState(snapshot, summary);
+    return { snapshot, summary };
+  };
+  const firmwareConfigController = new FirmwareConfigController(keilToolchain, refreshFirmwareConfigState);
   const getConfiguredFlashMethod = (): 'jlink' | 'stlink' | 'openocd' => {
     const configured = vscode.workspace.getConfiguration('serialagent').get<string>('flash.method', 'jlink');
     if (configured === 'stlink') {
@@ -145,6 +192,38 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
       vscode.window.showErrorMessage(`[Serial Agent] ${taskName} failed: ${msg}`);
+    }
+  };
+  const ensureKeilConfigIdle = (): boolean => {
+    if (!keilTaskRunning) {
+      return true;
+    }
+
+    vscode.window.showWarningMessage('[Serial Agent] Build/Flash task is running, please wait before changing config.');
+    return false;
+  };
+  const handleFirmwareConfigAction = async (action: FirmwareConfigAction): Promise<void> => {
+    const bypassIdleActions = new Set(['runConfigCheck', 'openAdvancedSettings']);
+    if (!bypassIdleActions.has(action) && !ensureKeilConfigIdle()) {
+      return;
+    }
+
+    try {
+      const result = await firmwareConfigController.handleAction(action);
+      if (result?.nextRoute) {
+        const nextRoute: FirmwareConfigRoute = result.nextRoute;
+        const nextStack: FirmwareConfigRoute[] = nextRoute === 'jlink' || nextRoute === 'stlink' || nextRoute === 'openocd'
+          ? ['home', 'flash', nextRoute]
+          : ['home', nextRoute];
+        await persistPanelUiState({
+          firmwareDrawerOpen: true,
+          firmwareDrawerRoute: nextRoute,
+          firmwareDrawerStack: nextStack,
+        });
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      vscode.window.showErrorMessage(`[Serial Agent] Build/Flash config failed: ${msg}`);
     }
   };
 
@@ -224,18 +303,62 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
+    vscode.commands.registerCommand('serialagent.keil.configureInteractive', async () => {
+      if (!ensureKeilConfigIdle()) {
+        return;
+      }
+      try {
+        await persistPanelUiState({
+          focusMode: false,
+          firmwareDrawerOpen: true,
+          firmwareDrawerRoute: 'home',
+          firmwareDrawerStack: ['home'],
+        });
+        await refreshFirmwareConfigState();
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        vscode.window.showErrorMessage(`[Serial Agent] Build/Flash config failed: ${msg}`);
+      }
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('serialagent.keil.savePanelUiState', async (partial?: Partial<SerialPanelUiState>) => {
+      if (!partial || typeof partial !== 'object') {
+        return readPanelUiState();
+      }
+      return persistPanelUiState(partial);
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('serialagent.keil.firmwareConfigAction', async (payload?: { action?: FirmwareConfigAction } | FirmwareConfigAction) => {
+      const action = typeof payload === 'string' ? payload : payload?.action;
+      if (!action) {
+        throw new Error('Missing firmware config action payload.');
+      }
+      await handleFirmwareConfigAction(action);
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('serialagent.keil.checkConfig', async () => {
+      try {
+        await firmwareConfigController.runCheck(true);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        vscode.window.showErrorMessage(`[Serial Agent] Config check failed: ${msg}`);
+      }
+    }),
+  );
+
+  context.subscriptions.push(
     vscode.commands.registerCommand('serialagent.keil.selectJlinkDevice', async () => {
       if (getConfiguredFlashMethod() !== 'jlink') {
         vscode.window.showWarningMessage('[Serial Agent] JLink CPU Name is only used when serialagent.flash.method = jlink.');
         return;
       }
-      try {
-        await keilToolchain.selectJLinkDeviceFromProject();
-        vscode.window.showInformationMessage('[Serial Agent] JLink CPU Name updated from Keil target.');
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        vscode.window.showErrorMessage(`[Serial Agent] Select JLink CPU Name failed: ${msg}`);
-      }
+      await handleFirmwareConfigAction('pickJlinkDevice');
     }),
   );
 
@@ -346,6 +469,16 @@ export function activate(context: vscode.ExtensionContext) {
       await revealAndLockPanel(panel);
     }),
   );
+
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration('serialagent')) {
+        void refreshFirmwareConfigState();
+      }
+    }),
+  );
+
+  void refreshFirmwareConfigState();
 }
 
 export async function deactivate(): Promise<void> {

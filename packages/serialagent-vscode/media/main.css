@@ -7,9 +7,11 @@ body {
   margin: 0;
   padding: 0 8px 8px;
   overflow: hidden;
-  background:
-    radial-gradient(circle at top right, rgba(0, 122, 204, 0.08), transparent 26%),
-    linear-gradient(180deg, rgba(128, 128, 128, 0.03), transparent 18%);
+  background: var(--vscode-editor-background);
+}
+
+.hidden {
+  display: none !important;
 }
 
 .status-bar {
@@ -110,21 +112,17 @@ body {
   flex-shrink: 0;
 }
 
-.section-block-serial {
-  border-left: 3px solid var(--vscode-textLink-foreground, #3794ff);
-}
-
-.section-block-firmware {
-  border-left: 3px solid var(--vscode-testing-iconPassed, #4ec9b0);
-}
-
 .section-block-log {
-  border-left: 3px solid var(--vscode-terminal-ansiYellow, #d7ba7d);
   padding-bottom: 8px;
 }
 
 body.focus-mode .section-block-serial,
 body.focus-mode .section-block-firmware {
+  display: none;
+}
+
+body.firmware-config-open .section-block-log,
+body.firmware-config-open .content-wrapper {
   display: none;
 }
 
@@ -254,6 +252,229 @@ body.focus-mode .section-block-firmware {
 
 .firmware-bar {
   margin-bottom: 4px;
+}
+
+.firmware-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 8px;
+  border: 1px solid var(--vscode-input-border, rgba(128, 128, 128, 0.24));
+  border-radius: 8px;
+  background: var(--vscode-editorWidget-background, rgba(30, 30, 30, 0.08));
+}
+
+.firmware-summary-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.firmware-summary-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(128, 128, 128, 0.12);
+  color: var(--vscode-foreground);
+}
+
+.firmware-summary-status.is-ready {
+  background: rgba(78, 201, 176, 0.18);
+  color: var(--vscode-testing-iconPassed, #4ec9b0);
+}
+
+.firmware-summary-status.is-warning {
+  background: rgba(215, 186, 125, 0.16);
+  color: var(--vscode-terminal-ansiYellow, #d7ba7d);
+}
+
+.firmware-summary-line,
+.firmware-summary-hint,
+.firmware-summary-warning {
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.firmware-summary-line {
+  color: var(--vscode-foreground);
+}
+
+.firmware-summary-hint {
+  color: var(--vscode-descriptionForeground);
+}
+
+.firmware-summary-warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.firmware-summary-warning {
+  color: var(--vscode-terminal-ansiYellow, #d7ba7d);
+}
+
+.firmware-summary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.firmware-config-drawer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.2));
+  border-radius: 10px;
+  background: var(--vscode-editorWidget-background, rgba(30, 30, 30, 0.08));
+  max-height: min(52vh, 420px);
+  overflow-y: auto;
+}
+
+.firmware-config-drawer-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.firmware-config-drawer-heading {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.firmware-config-drawer-eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--vscode-descriptionForeground);
+}
+
+.firmware-config-drawer-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--vscode-foreground);
+}
+
+.firmware-config-route {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.firmware-config-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(128, 128, 128, 0.08);
+}
+
+.firmware-config-intro-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--vscode-foreground);
+}
+
+.firmware-config-intro-text {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--vscode-descriptionForeground);
+}
+
+.firmware-config-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.firmware-config-grid-flash {
+  margin-top: 2px;
+}
+
+.firmware-route-card {
+  display: flex;
+  min-height: 88px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--vscode-input-border, rgba(128, 128, 128, 0.24));
+  border-radius: 8px;
+  color: var(--vscode-foreground);
+  background: rgba(128, 128, 128, 0.08);
+  cursor: pointer;
+  text-align: left;
+}
+
+.firmware-route-card:hover,
+.firmware-route-card.is-active {
+  border-color: var(--vscode-focusBorder, #007acc);
+  background: rgba(128, 128, 128, 0.12);
+}
+
+.firmware-route-card-title {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.firmware-route-card-text {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--vscode-descriptionForeground);
+}
+
+.firmware-config-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.firmware-config-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(128, 128, 128, 0.08);
+}
+
+.firmware-config-item-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.firmware-config-item-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--vscode-foreground);
+}
+
+.firmware-config-item-text {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--vscode-descriptionForeground);
+}
+
+.firmware-config-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .btn-primary,
@@ -412,6 +633,7 @@ body.focus-mode .section-block-firmware {
   white-space: pre-wrap;
   word-break: break-all;
   flex: 1;
+  outline: none;
 }
 
 .log-line {
@@ -727,4 +949,18 @@ body.focus-mode .section-block-firmware {
 .send-input-row textarea:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  .firmware-config-drawer-header,
+  .firmware-config-item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .firmware-config-drawer-header .btn-secondary,
+  .firmware-config-item .btn-secondary,
+  .firmware-config-item .btn-primary {
+    width: 100%;
+  }
 }

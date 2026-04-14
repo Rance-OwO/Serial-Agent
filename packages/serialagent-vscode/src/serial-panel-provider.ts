@@ -1,5 +1,11 @@
 import * as crypto from 'crypto';
 import * as vscode from 'vscode';
+import {
+  FirmwareConfigAction,
+  FirmwareConfigRoute,
+  FirmwareConfigSnapshot,
+  FirmwareConfigSummary,
+} from './firmware-config-model';
 import type { SerialRuntime } from './serial-manager';
 import { DEFAULT_CONFIG, SerialConfig } from './types';
 
@@ -30,6 +36,9 @@ interface SerialPanelUiState {
   focusMode: boolean;
   normalSendHeight?: number;
   focusSendHeight?: number;
+  firmwareDrawerOpen?: boolean;
+  firmwareDrawerRoute?: FirmwareConfigRoute;
+  firmwareDrawerStack?: FirmwareConfigRoute[];
 }
 
 export class SerialPanelProvider implements vscode.WebviewViewProvider {
@@ -38,6 +47,8 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
 
   private _view?: vscode.WebviewView;
   private _panel?: vscode.WebviewPanel;
+  private _firmwareConfigSnapshot?: FirmwareConfigSnapshot;
+  private _firmwareConfigSummary?: FirmwareConfigSummary;
 
   constructor(
     private readonly _context: vscode.ExtensionContext,
@@ -95,6 +106,13 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
     this._persistPanelUiState({ focusMode });
   }
 
+  public setFirmwareConfigState(snapshot: FirmwareConfigSnapshot, summary: FirmwareConfigSummary): void {
+    this._firmwareConfigSnapshot = snapshot;
+    this._firmwareConfigSummary = summary;
+    this.postMessage({ type: 'firmwareConfigSnapshot', snapshot });
+    this.postMessage({ type: 'firmwareConfigSummary', summary });
+  }
+
   private _saveConfig(partial: Partial<SerialConfig>): void {
     const saved = this._context.globalState.get<SerialConfig>('serialConfig', { ...DEFAULT_CONFIG });
     void this._context.globalState.update('serialConfig', { ...saved, ...partial });
@@ -129,18 +147,78 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
   }
 
   private _loadPanelUiState(): SerialPanelUiState {
-    return this._context.globalState.get<SerialPanelUiState>('serialPanelUiState', {
+    return this._normalizePanelUiState(this._context.globalState.get<SerialPanelUiState>('serialPanelUiState', {
       focusMode: false,
-    });
+      firmwareDrawerOpen: false,
+      firmwareDrawerRoute: 'home',
+      firmwareDrawerStack: ['home'],
+    }));
   }
 
   private _persistPanelUiState(partial: Partial<SerialPanelUiState>): void {
-    const nextState: SerialPanelUiState = {
+    const nextState = this._normalizePanelUiState({
       ...this._loadPanelUiState(),
       ...partial,
-    };
+    });
     void this._context.globalState.update('serialPanelUiState', nextState);
     this.postMessage({ type: 'updateUiState', uiState: nextState });
+  }
+
+  private _normalizePanelUiState(state: Partial<SerialPanelUiState>): SerialPanelUiState {
+    const focusMode = !!state.focusMode;
+    const route = this._normalizeFirmwareDrawerRoute(state.firmwareDrawerRoute);
+    const stack = this._normalizeFirmwareDrawerStack(state.firmwareDrawerStack, route);
+    const firmwareDrawerOpen = focusMode ? false : !!state.firmwareDrawerOpen;
+
+    return {
+      focusMode,
+      normalSendHeight: typeof state.normalSendHeight === 'number' ? state.normalSendHeight : undefined,
+      focusSendHeight: typeof state.focusSendHeight === 'number' ? state.focusSendHeight : undefined,
+      firmwareDrawerOpen,
+      firmwareDrawerRoute: firmwareDrawerOpen ? stack[stack.length - 1] : 'home',
+      firmwareDrawerStack: firmwareDrawerOpen ? stack : ['home'],
+    };
+  }
+
+  private _normalizeFirmwareDrawerRoute(route: unknown): FirmwareConfigRoute {
+    switch (route) {
+      case 'build':
+      case 'flash':
+      case 'jlink':
+      case 'stlink':
+      case 'openocd':
+        return route;
+      case 'home':
+      default:
+        return 'home';
+    }
+  }
+
+  private _normalizeFirmwareDrawerStack(
+    stack: unknown,
+    fallbackRoute: FirmwareConfigRoute,
+  ): FirmwareConfigRoute[] {
+    if (!Array.isArray(stack) || stack.length === 0) {
+      return ['home'];
+    }
+
+    const normalized = stack
+      .map((item) => this._normalizeFirmwareDrawerRoute(item))
+      .filter((route, index, routes) => route !== routes[index - 1]);
+
+    if (normalized.length === 0) {
+      return ['home'];
+    }
+
+    if (normalized[normalized.length - 1] !== fallbackRoute) {
+      normalized.push(fallbackRoute);
+    }
+
+    if (normalized[0] !== 'home') {
+      normalized.unshift('home');
+    }
+
+    return normalized;
   }
 
   private async _saveLogToFile(logLines: string[]): Promise<void> {
@@ -202,6 +280,8 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
       serialProfiles: this._loadSerialProfiles(),
       quickCommands: this._loadQuickCommands(),
       uiState: this._loadPanelUiState(),
+      firmwareConfigSnapshot: this._firmwareConfigSnapshot,
+      firmwareConfigSummary: this._firmwareConfigSummary,
     });
 
     if (this._serialManager.isConnected) {
@@ -313,7 +393,12 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
           const focusMode = typeof data.focusMode === 'boolean'
             ? data.focusMode
             : !this._loadPanelUiState().focusMode;
-          this._persistPanelUiState({ focusMode });
+          this._persistPanelUiState({
+            focusMode,
+            firmwareDrawerOpen: focusMode ? false : undefined,
+            firmwareDrawerRoute: focusMode ? 'home' : undefined,
+            firmwareDrawerStack: focusMode ? ['home'] : undefined,
+          });
           break;
         }
 
@@ -324,6 +409,29 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
           }
           if (typeof data.focusSendHeight === 'number') {
             partial.focusSendHeight = data.focusSendHeight;
+          }
+          if (Object.keys(partial).length > 0) {
+            this._persistPanelUiState(partial);
+          }
+          break;
+        }
+
+        case 'savePanelUiState': {
+          const partial: Partial<SerialPanelUiState> = {};
+          if (typeof data.focusMode === 'boolean') {
+            partial.focusMode = data.focusMode;
+          }
+          if (typeof data.firmwareDrawerOpen === 'boolean') {
+            partial.firmwareDrawerOpen = data.firmwareDrawerOpen;
+          }
+          if (data.firmwareDrawerRoute !== undefined) {
+            partial.firmwareDrawerRoute = this._normalizeFirmwareDrawerRoute(data.firmwareDrawerRoute);
+          }
+          if (Array.isArray(data.firmwareDrawerStack)) {
+            partial.firmwareDrawerStack = this._normalizeFirmwareDrawerStack(
+              data.firmwareDrawerStack,
+              this._normalizeFirmwareDrawerRoute(data.firmwareDrawerRoute),
+            );
           }
           if (Object.keys(partial).length > 0) {
             this._persistPanelUiState(partial);
@@ -347,12 +455,36 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
         }
 
         case 'keilOpenConfig': {
+          this._persistPanelUiState({
+            firmwareDrawerOpen: true,
+            firmwareDrawerRoute: 'home',
+            firmwareDrawerStack: ['home'],
+          });
+          break;
+        }
+
+        case 'keilRunConfigCheck': {
+          await vscode.commands.executeCommand('serialagent.keil.checkConfig');
+          break;
+        }
+
+        case 'keilOpenAdvancedSettings': {
           await vscode.commands.executeCommand('serialagent.keil.openSettings');
           break;
         }
 
         case 'keilSelectCpu': {
           await vscode.commands.executeCommand('serialagent.keil.selectJlinkDevice');
+          break;
+        }
+
+        case 'firmwareConfigAction': {
+          if (typeof data.action === 'string') {
+            await vscode.commands.executeCommand(
+              'serialagent.keil.firmwareConfigAction',
+              { action: data.action as FirmwareConfigAction },
+            );
+          }
           break;
         }
       }
@@ -464,8 +596,257 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
       <button id="btn-keil-build" class="btn-secondary">Build</button>
       <button id="btn-keil-flash" class="btn-secondary">Flash</button>
       <button id="btn-keil-build-flash" class="btn-primary">Build+Flash</button>
-      <button id="btn-keil-cpu" class="btn-secondary">JLink CPU</button>
-      <button id="btn-keil-config" class="btn-secondary">Build/Flash Config</button>
+    </div>
+    <div class="firmware-summary">
+      <div class="firmware-summary-top">
+        <span id="firmware-summary-status" class="firmware-summary-status">Checking Build/Flash config...</span>
+      </div>
+      <div id="firmware-summary-build" class="firmware-summary-line">Build: waiting for summary...</div>
+      <div id="firmware-summary-flash" class="firmware-summary-line">Flash: waiting for summary...</div>
+      <div id="firmware-summary-hint" class="firmware-summary-hint">Use Configure to start the guided setup.</div>
+      <div id="firmware-summary-warnings" class="firmware-summary-warnings hidden"></div>
+      <div class="firmware-summary-actions">
+        <button id="btn-keil-config-inline" class="btn-secondary btn-compact" type="button">Configure</button>
+        <button id="btn-keil-check" class="btn-secondary btn-compact" type="button">Run Check</button>
+        <button id="btn-keil-settings" class="btn-secondary btn-compact" type="button">Settings</button>
+      </div>
+    </div>
+    <div id="firmware-config-drawer" class="firmware-config-drawer hidden">
+      <div class="firmware-config-drawer-header">
+        <button id="btn-firmware-drawer-back" class="btn-secondary btn-compact" type="button">Back</button>
+        <div class="firmware-config-drawer-heading">
+          <span class="firmware-config-drawer-eyebrow">Firmware Config</span>
+          <span id="firmware-drawer-route-title" class="firmware-config-drawer-title">Home</span>
+        </div>
+        <button id="btn-firmware-drawer-close" class="btn-secondary btn-compact" type="button">Close and Return to Serial</button>
+      </div>
+
+      <div id="firmware-route-home" class="firmware-config-route">
+        <div class="firmware-config-intro">
+          <div class="firmware-config-intro-title">Start from the area you want to fix.</div>
+          <div class="firmware-config-intro-text">Summary stays visible above. Open Build or Flash, edit one field at a time, and close this drawer whenever you want to return to Serial Agent.</div>
+        </div>
+        <div class="firmware-config-grid">
+          <button class="firmware-route-card" type="button" data-firmware-route="build">
+            <span class="firmware-route-card-title">Build Essentials</span>
+            <span class="firmware-route-card-text">UV4 or MDK path, project file, target.</span>
+          </button>
+          <button class="firmware-route-card" type="button" data-firmware-route="flash">
+            <span class="firmware-route-card-title">Flash Essentials</span>
+            <span class="firmware-route-card-text">F7 action, flasher choice, backend details.</span>
+          </button>
+        </div>
+        <div class="firmware-config-actions">
+          <button class="btn-secondary btn-compact" type="button" data-firmware-action="runConfigCheck" data-keil-busy-lock="true">Run Check</button>
+          <button class="btn-secondary btn-compact" type="button" data-firmware-action="openAdvancedSettings">Settings</button>
+        </div>
+      </div>
+
+      <div id="firmware-route-build" class="firmware-config-route hidden">
+        <div class="firmware-config-list">
+          <div class="firmware-config-item">
+            <div class="firmware-config-item-copy">
+              <div class="firmware-config-item-title">UV4 or MDK Path</div>
+              <div id="fw-build-uv4" class="firmware-config-item-text">Pick UV4.exe first so build can run from the extension.</div>
+            </div>
+            <button class="btn-secondary btn-compact" type="button" data-firmware-action="pickUv4Path" data-keil-busy-lock="true">Choose UV4.exe</button>
+          </div>
+          <div class="firmware-config-item">
+            <div class="firmware-config-item-copy">
+              <div class="firmware-config-item-title">Project File</div>
+              <div id="fw-build-project" class="firmware-config-item-text">Select the active .uvprojx or .uvproj file.</div>
+            </div>
+            <button class="btn-secondary btn-compact" type="button" data-firmware-action="pickProjectFile" data-keil-busy-lock="true">Choose Project File</button>
+          </div>
+          <div class="firmware-config-item">
+            <div class="firmware-config-item-copy">
+              <div class="firmware-config-item-title">Target</div>
+              <div id="fw-build-target" class="firmware-config-item-text">Use the target picker instead of free text.</div>
+            </div>
+            <button class="btn-secondary btn-compact" type="button" data-firmware-action="pickTarget" data-keil-busy-lock="true">Choose Target</button>
+          </div>
+        </div>
+        <div class="firmware-config-actions">
+          <button class="btn-secondary btn-compact" type="button" data-firmware-action="runConfigCheck" data-keil-busy-lock="true">Run Check</button>
+          <button class="btn-secondary btn-compact" type="button" data-firmware-action="openAdvancedSettings">Advanced Settings</button>
+        </div>
+      </div>
+
+      <div id="firmware-route-flash" class="firmware-config-route hidden">
+        <div class="firmware-config-list">
+          <div class="firmware-config-item">
+            <div class="firmware-config-item-copy">
+              <div class="firmware-config-item-title">F7 Action</div>
+              <div id="fw-flash-f7" class="firmware-config-item-text">Choose whether F7 does build only or build plus flash.</div>
+            </div>
+            <button class="btn-secondary btn-compact" type="button" data-firmware-action="pickF7Action" data-keil-busy-lock="true">Choose F7 Action</button>
+          </div>
+          <div class="firmware-config-item">
+            <div class="firmware-config-item-copy">
+              <div class="firmware-config-item-title">Flash Method</div>
+              <div id="fw-flash-method" class="firmware-config-item-text">Switch between JLink, ST-Link, and OpenOCD, then enter that backend page.</div>
+            </div>
+            <button class="btn-secondary btn-compact" type="button" data-firmware-action="pickFlashMethod" data-keil-busy-lock="true">Choose Flasher</button>
+          </div>
+        </div>
+        <div class="firmware-config-grid firmware-config-grid-flash">
+          <button class="firmware-route-card" type="button" data-firmware-route="jlink">
+            <span class="firmware-route-card-title">JLink</span>
+            <span class="firmware-route-card-text">Install path, CPU, interface, speed, base address.</span>
+          </button>
+          <button class="firmware-route-card" type="button" data-firmware-route="stlink">
+            <span class="firmware-route-card-title">ST-Link</span>
+            <span class="firmware-route-card-text">CLI path, interface, speed, reset mode, run after program.</span>
+          </button>
+          <button class="firmware-route-card" type="button" data-firmware-route="openocd">
+            <span class="firmware-route-card-title">OpenOCD</span>
+            <span class="firmware-route-card-text">Executable, Chip Config, Interface Config, sequence.</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="firmware-route-jlink" class="firmware-config-route hidden">
+        <div class="firmware-config-list">
+          <div class="firmware-config-item">
+            <div class="firmware-config-item-copy">
+              <div class="firmware-config-item-title">Install Directory</div>
+              <div id="fw-jlink-install" class="firmware-config-item-text">Choose the JLink install directory.</div>
+            </div>
+            <button class="btn-secondary btn-compact" type="button" data-firmware-action="pickJlinkInstallDir" data-keil-busy-lock="true">Choose Install Directory</button>
+          </div>
+          <div class="firmware-config-item">
+            <div class="firmware-config-item-copy">
+              <div class="firmware-config-item-title">JLink CPU</div>
+              <div id="fw-jlink-device" class="firmware-config-item-text">Use the dedicated CPU selector instead of typing the device name manually.</div>
+            </div>
+            <button class="btn-primary btn-compact" type="button" data-firmware-action="pickJlinkDevice" data-keil-busy-lock="true">Select JLink CPU</button>
+          </div>
+          <div class="firmware-config-item">
+            <div class="firmware-config-item-copy">
+              <div class="firmware-config-item-title">Interface</div>
+              <div id="fw-jlink-interface" class="firmware-config-item-text">Choose the JLink interface type.</div>
+            </div>
+            <button class="btn-secondary btn-compact" type="button" data-firmware-action="pickJlinkInterface" data-keil-busy-lock="true">Choose Interface</button>
+          </div>
+          <div class="firmware-config-item">
+            <div class="firmware-config-item-copy">
+              <div class="firmware-config-item-title">Speed</div>
+              <div id="fw-jlink-speed" class="firmware-config-item-text">Choose the JLink speed in kHz.</div>
+            </div>
+            <button class="btn-secondary btn-compact" type="button" data-firmware-action="pickJlinkSpeed" data-keil-busy-lock="true">Choose Speed</button>
+          </div>
+          <div class="firmware-config-item">
+            <div class="firmware-config-item-copy">
+              <div class="firmware-config-item-title">Base Address</div>
+              <div id="fw-jlink-base" class="firmware-config-item-text">Choose the base address for .bin flashing.</div>
+            </div>
+            <button class="btn-secondary btn-compact" type="button" data-firmware-action="pickJlinkBaseAddr" data-keil-busy-lock="true">Choose Base Address</button>
+          </div>
+        </div>
+        <div class="firmware-config-actions">
+          <button class="btn-secondary btn-compact" type="button" data-firmware-action="runConfigCheck" data-keil-busy-lock="true">Run Check</button>
+        </div>
+      </div>
+
+      <div id="firmware-route-stlink" class="firmware-config-route hidden">
+        <div class="firmware-config-list">
+          <div class="firmware-config-item">
+            <div class="firmware-config-item-copy">
+              <div class="firmware-config-item-title">STM32 Programmer CLI</div>
+              <div id="fw-stlink-exe" class="firmware-config-item-text">Choose STM32_Programmer_CLI.exe and the matching flash parameters.</div>
+            </div>
+            <button class="btn-secondary btn-compact" type="button" data-firmware-action="pickStlinkExePath" data-keil-busy-lock="true">Choose CLI Path</button>
+          </div>
+          <div class="firmware-config-item">
+            <div class="firmware-config-item-copy">
+              <div class="firmware-config-item-title">Interface</div>
+              <div id="fw-stlink-interface" class="firmware-config-item-text">Choose the ST-Link interface type.</div>
+            </div>
+            <button class="btn-secondary btn-compact" type="button" data-firmware-action="pickStlinkInterface" data-keil-busy-lock="true">Choose Interface</button>
+          </div>
+          <div class="firmware-config-item">
+            <div class="firmware-config-item-copy">
+              <div class="firmware-config-item-title">Speed</div>
+              <div id="fw-stlink-speed" class="firmware-config-item-text">Choose the ST-Link speed in kHz.</div>
+            </div>
+            <button class="btn-secondary btn-compact" type="button" data-firmware-action="pickStlinkSpeed" data-keil-busy-lock="true">Choose Speed</button>
+          </div>
+          <div class="firmware-config-item">
+            <div class="firmware-config-item-copy">
+              <div class="firmware-config-item-title">Base Address</div>
+              <div id="fw-stlink-base" class="firmware-config-item-text">Choose the base address for .bin flashing.</div>
+            </div>
+            <button class="btn-secondary btn-compact" type="button" data-firmware-action="pickStlinkBaseAddr" data-keil-busy-lock="true">Choose Base Address</button>
+          </div>
+          <div class="firmware-config-item">
+            <div class="firmware-config-item-copy">
+              <div class="firmware-config-item-title">Reset Mode</div>
+              <div id="fw-stlink-reset" class="firmware-config-item-text">Choose the reset mode passed to STM32CubeProgrammer.</div>
+            </div>
+            <button class="btn-secondary btn-compact" type="button" data-firmware-action="pickStlinkResetMode" data-keil-busy-lock="true">Choose Reset Mode</button>
+          </div>
+          <div class="firmware-config-item">
+            <div class="firmware-config-item-copy">
+              <div class="firmware-config-item-title">Run After Program</div>
+              <div id="fw-stlink-run-after" class="firmware-config-item-text">Choose whether STM32CubeProgrammer should add --go after flashing.</div>
+            </div>
+            <button class="btn-secondary btn-compact" type="button" data-firmware-action="pickStlinkRunAfterProgram" data-keil-busy-lock="true">Choose Run After Program</button>
+          </div>
+        </div>
+        <div class="firmware-config-actions">
+          <button class="btn-secondary btn-compact" type="button" data-firmware-action="openAdvancedSettings">Advanced Settings</button>
+        </div>
+      </div>
+
+      <div id="firmware-route-openocd" class="firmware-config-route hidden">
+        <div class="firmware-config-list">
+          <div class="firmware-config-item">
+            <div class="firmware-config-item-copy">
+              <div class="firmware-config-item-title">OpenOCD Executable</div>
+              <div id="fw-openocd-exe" class="firmware-config-item-text">Point to openocd.exe before selecting configs.</div>
+            </div>
+            <button class="btn-secondary btn-compact" type="button" data-firmware-action="pickOpenOcdExePath" data-keil-busy-lock="true">Choose openocd.exe</button>
+          </div>
+          <div class="firmware-config-item">
+            <div class="firmware-config-item-copy">
+              <div class="firmware-config-item-title">Chip Config</div>
+              <div id="fw-openocd-target" class="firmware-config-item-text">Choose the target cfg from detected OpenOCD scripts.</div>
+            </div>
+            <button class="btn-primary btn-compact" type="button" data-firmware-action="pickOpenOcdTarget" data-keil-busy-lock="true">Choose Chip Config</button>
+          </div>
+          <div class="firmware-config-item">
+            <div class="firmware-config-item-copy">
+              <div class="firmware-config-item-title">Interface Config</div>
+              <div id="fw-openocd-interface" class="firmware-config-item-text">Choose the interface cfg from detected OpenOCD scripts.</div>
+            </div>
+            <button class="btn-primary btn-compact" type="button" data-firmware-action="pickOpenOcdInterface" data-keil-busy-lock="true">Choose Interface Config</button>
+          </div>
+          <div class="firmware-config-item">
+            <div class="firmware-config-item-copy">
+              <div class="firmware-config-item-title">Sequence</div>
+              <div id="fw-openocd-sequence" class="firmware-config-item-text">Choose helper or low-reset depending on your board reset pattern.</div>
+            </div>
+            <button class="btn-secondary btn-compact" type="button" data-firmware-action="pickOpenOcdSequence" data-keil-busy-lock="true">Choose Sequence</button>
+          </div>
+          <div class="firmware-config-item">
+            <div class="firmware-config-item-copy">
+              <div class="firmware-config-item-title">Base Address</div>
+              <div id="fw-openocd-base" class="firmware-config-item-text">Choose the base address for .bin flashing.</div>
+            </div>
+            <button class="btn-secondary btn-compact" type="button" data-firmware-action="pickOpenOcdBaseAddr" data-keil-busy-lock="true">Choose Base Address</button>
+          </div>
+          <div class="firmware-config-item">
+            <div class="firmware-config-item-copy">
+              <div class="firmware-config-item-title">Run After Program</div>
+              <div id="fw-openocd-run-after" class="firmware-config-item-text">Choose whether OpenOCD should append reset run.</div>
+            </div>
+            <button class="btn-secondary btn-compact" type="button" data-firmware-action="pickOpenOcdRunAfterProgram" data-keil-busy-lock="true">Choose Run After Program</button>
+          </div>
+        </div>
+        <div class="firmware-config-actions">
+          <button class="btn-secondary btn-compact" type="button" data-firmware-action="runConfigCheck" data-keil-busy-lock="true">Run Check</button>
+        </div>
+      </div>
     </div>
     <div id="keil-status" class="keil-status">Keil: Idle</div>
   </div>
@@ -509,7 +890,7 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
   <div class="content-wrapper">
     <div class="log-section">
       <div id="log-empty-state" class="empty-state">Waiting RX data...</div>
-      <div id="log-area" class="log-area"></div>
+      <div id="log-area" class="log-area" tabindex="-1"></div>
     </div>
     <div id="resize-handle" class="resize-handle" title="Drag to resize"></div>
     <div class="send-section" id="send-section">
