@@ -2,7 +2,7 @@
   "name": "serialagent-vscode",
   "displayName": "Serial Agent",
   "description": "Serial monitor, MCP bridge, and firmware actions for embedded debugging in VS Code.",
-  "version": "1.1.8",
+  "version": "1.1.12",
   "publisher": "ranceowo",
   "license": "MIT",
   "icon": "media/SerialAgent.png",
@@ -163,13 +163,13 @@
           "type": "string",
           "default": "C:\\Keil_v5\\UV4\\UV4.exe",
           "scope": "machine",
-          "markdownDescription": "Path to Keil UV4 executable used for command-line build."
+          "markdownDescription": "Path to the Keil MDK-ARM `UV4.exe` executable used for command-line build. Example: `C:\\Keil_v5\\UV4\\UV4.exe`."
         },
         "serialagent.keil.armcc5Path": {
           "type": "string",
           "default": "",
           "scope": "machine",
-          "markdownDescription": "ARMCC5 bin directory (for example: C:\\Keil_v5\\ARM\\ARMCC\\bin)."
+          "markdownDescription": "Optional ARMCC5 `bin` directory used to help `UV4.exe` resolve the AC5 toolchain. Example: `C:\\Keil_v5\\ARM\\ARMCC\\bin`."
         },
         "serialagent.keil.resultPolicy": {
           "type": "string",

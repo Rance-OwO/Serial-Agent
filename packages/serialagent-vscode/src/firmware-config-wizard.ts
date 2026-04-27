@@ -189,6 +189,7 @@ export class FirmwareConfigController {
       return;
     }
 
+    const snapshot = this.toolchain.getConfigSnapshot();
     const targets = await this.toolchain.listProjectTargets(projectFile);
     if (targets.length === 0) {
       vscode.window.showErrorMessage('[Serial Agent] No Keil targets found in the selected project file.');
@@ -197,16 +198,27 @@ export class FirmwareConfigController {
 
     const target = await this.pickChoice({
       title: 'Build: Select Target',
-      placeHolder: `Choose the target from ${path.basename(projectFile)}.`,
-      items: targets.map((item) => ({
-        label: item,
-        description: item === this.toolchain.getConfigSnapshot().keil.target ? 'Current' : undefined,
-        value: item,
-      })),
+      placeHolder: `Optional. Leave this empty to use Auto and build the first target from ${path.basename(projectFile)}. Only choose one manually when the project has multiple targets.`,
+      items: [
+        {
+          label: 'Auto',
+          description: snapshot.keil.target ? undefined : 'Current',
+          detail: `Leave this empty to use Auto. Serial Agent will use the first target in ${path.basename(projectFile)}, and you usually only need to choose one manually when the project has multiple targets.`,
+          value: '__auto__',
+        },
+        ...targets.map((item) => ({
+          label: item,
+          description: item === snapshot.keil.target ? 'Current' : undefined,
+          detail: 'Pin this exact target name for build and flash.',
+          value: item,
+        })),
+      ],
     });
-    if (target) {
-      await this.updateSetting('keil.target', target);
+    if (!target) {
+      return;
     }
+
+    await this.updateSetting('keil.target', target === '__auto__' ? '' : target);
   }
 
   private async editF7Action(): Promise<void> {
@@ -276,12 +288,13 @@ export class FirmwareConfigController {
     const snapshot = this.toolchain.getConfigSnapshot();
     const installDirectory = await this.pickDirectoryPath({
       title: 'JLink: Install Directory',
-      placeHolder: 'Choose the SEGGER JLink installation directory.',
+      placeHolder: 'Choose the SEGGER JLink installation directory. Example: C:\\Program Files\\SEGGER\\JLink',
       currentValue: snapshot.flash.jlink.installDirectory,
       suggestions: [
         'C:\\Program Files\\SEGGER\\JLink',
         'C:\\Program Files (x86)\\SEGGER\\JLink',
       ],
+      browseDetail: 'Select the JLink install directory, not JLink.exe. Example: C:\\Program Files\\SEGGER\\JLink',
     });
     if (installDirectory) {
       await this.updateSetting('jlink.installDirectory', installDirectory);
@@ -344,10 +357,10 @@ export class FirmwareConfigController {
     const snapshot = this.toolchain.getConfigSnapshot();
     const exePath = await this.pickExecutablePath({
       title: 'ST-Link: STM32_Programmer_CLI.exe',
-      placeHolder: 'Choose STM32_Programmer_CLI.exe.',
+      placeHolder: 'Choose STM32_Programmer_CLI.exe. Example: C:\\ST\\STM32CubeCLT\\STM32CubeProgrammer\\bin\\STM32_Programmer_CLI.exe',
       currentValue: snapshot.flash.stlink.exePath,
       suggestions: [],
-      browseDetail: 'Select the STM32CubeProgrammer CLI executable.',
+      browseDetail: 'Select the STM32CubeProgrammer CLI executable. Example: C:\\ST\\STM32CubeCLT\\STM32CubeProgrammer\\bin\\STM32_Programmer_CLI.exe',
       filters: { Executable: ['exe'] },
     });
     if (exePath) {
@@ -430,10 +443,10 @@ export class FirmwareConfigController {
     const snapshot = this.toolchain.getConfigSnapshot();
     const exePath = await this.pickExecutablePath({
       title: 'OpenOCD: openocd.exe',
-      placeHolder: 'Choose the OpenOCD executable from an official package.',
+      placeHolder: 'Choose the OpenOCD executable from an official package. Example: C:\\OpenOCD\\bin\\openocd.exe',
       currentValue: snapshot.flash.openocd.exePath,
       suggestions: [],
-      browseDetail: 'Select the OpenOCD executable from your installation.',
+      browseDetail: 'Select the OpenOCD executable from your installation. Example: C:\\OpenOCD\\bin\\openocd.exe',
       filters: { Executable: ['exe'] },
     });
     if (exePath) {
@@ -597,42 +610,82 @@ export class FirmwareConfigController {
         : path.resolve(workspaceRoot || '', currentValue))
       : '';
 
-    const items: ActionItem[] = candidates.map((candidate) => ({
-      label: path.basename(candidate),
-      description: candidate === currentResolved ? 'Current' : this.toolchain.toWorkspaceRelativePath(candidate),
-      detail: candidate,
-      value: candidate,
-    }));
-    items.push({
-      label: 'Browse for project file...',
-      description: 'Select a .uvprojx or .uvproj file manually.',
-      value: '__browse__',
-    });
+    const items: ActionItem[] = [
+      {
+        label: 'Browse for project file...',
+        description: 'Select a .uvprojx or .uvproj file manually.',
+        value: '__browse__',
+      },
+      {
+        label: 'Browse for folder...',
+        description: 'Pick a folder and scan it for .uvprojx / .uvproj files.',
+        value: '__browse_folder__',
+      },
+      ...candidates.map((candidate) => ({
+        label: path.basename(candidate),
+        description: candidate === currentResolved ? 'Current' : this.toolchain.toWorkspaceRelativePath(candidate),
+        detail: candidate,
+        value: candidate,
+      })),
+    ];
 
     const picked = await this.pickChoice({
       title: 'Build: Project File',
-      placeHolder: 'Choose the Keil project file used for build and artifact resolution.',
+      placeHolder: 'Choose a .uvprojx / .uvproj directly, or choose a folder and let Serial Agent scan it for project files.',
       items,
     });
     if (!picked) {
       return undefined;
     }
-    if (picked !== '__browse__') {
-      return picked;
+    if (picked === '__browse__') {
+      const files = await vscode.window.showOpenDialog({
+        title: 'Build: Project File',
+        canSelectFiles: true,
+        canSelectFolders: false,
+        canSelectMany: false,
+        openLabel: 'Use this project',
+        filters: {
+          'Keil Project': ['uvprojx', 'uvproj'],
+        },
+      });
+
+      return files?.[0]?.fsPath;
+    }
+    if (picked === '__browse_folder__') {
+      const folders = await vscode.window.showOpenDialog({
+        title: 'Build: Project Folder',
+        canSelectFiles: false,
+        canSelectFolders: true,
+        canSelectMany: false,
+        openLabel: 'Scan this folder',
+      });
+      const folderPath = folders?.[0]?.fsPath;
+      if (!folderPath) {
+        return undefined;
+      }
+
+      const discovered = await this.toolchain.listProjectFilesInFolder(folderPath);
+      if (discovered.length === 0) {
+        vscode.window.showWarningMessage('[Serial Agent] No .uvprojx/.uvproj files were found in the selected folder.');
+        return undefined;
+      }
+      if (discovered.length === 1) {
+        return discovered[0];
+      }
+
+      return this.pickChoice({
+        title: 'Build: Project File in Folder',
+        placeHolder: `Choose the project file found under ${folderPath}.`,
+        items: discovered.map((candidate) => ({
+          label: path.basename(candidate),
+          description: this.toolchain.toWorkspaceRelativePath(candidate),
+          detail: candidate,
+          value: candidate,
+        })),
+      });
     }
 
-    const files = await vscode.window.showOpenDialog({
-      title: 'Build: Project File',
-      canSelectFiles: true,
-      canSelectFolders: false,
-      canSelectMany: false,
-      openLabel: 'Use this project',
-      filters: {
-        'Keil Project': ['uvprojx', 'uvproj'],
-      },
-    });
-
-    return files?.[0]?.fsPath;
+    return picked;
   }
 
   private async pickPathLikeValue(options: {

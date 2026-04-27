@@ -761,8 +761,8 @@
 
     setFirmwareValue('fw-build-uv4', formatFirmwarePath(keil.uv4Path, 'Choose Keil MDK-ARM UV4.exe'));
     setFirmwareValue('fw-build-armcc5', formatFirmwarePath(keil.armcc5Path, 'Optional ARMCC5 bin directory'));
-    setFirmwareValue('fw-build-project', formatFirmwarePath(keil.projectFile, 'Choose .uvprojx / .uvproj'));
-    setFirmwareValue('fw-build-target', keil.target || 'Choose target from the project');
+    setFirmwareValue('fw-build-project', formatFirmwarePath(keil.projectFile, 'Choose .uvprojx / .uvproj directly, or scan a folder'));
+    setFirmwareValue('fw-build-target', keil.target || 'Optional: Auto uses the first target in the project');
 
     setFirmwareValue(
       'fw-flash-f7',
@@ -786,8 +786,8 @@
     setFirmwareValue('fw-stlink-run-after', stlink.runAfterProgram ? 'Yes' : 'No');
 
     setFirmwareValue('fw-openocd-exe', formatFirmwarePath(openocd.exePath, 'Choose openocd.exe'));
-    setFirmwareValue('fw-openocd-target', openocd.target ? `${openocd.target}.cfg` : 'Choose target .cfg');
-    setFirmwareValue('fw-openocd-interface', openocd.interface ? `${openocd.interface}.cfg` : 'Choose interface .cfg');
+    setFirmwareValue('fw-openocd-target', openocd.target ? `${openocd.target}.cfg` : 'Choose target short name (.cfg)');
+    setFirmwareValue('fw-openocd-interface', openocd.interface ? `${openocd.interface}.cfg` : 'Choose interface short name (.cfg)');
     setFirmwareValue('fw-openocd-sequence', openocd.sequence || 'helper');
     setFirmwareValue('fw-openocd-base', openocd.baseAddr || '0x08000000');
     setFirmwareValue('fw-openocd-run-after', openocd.runAfterProgram ? 'Yes' : 'No');

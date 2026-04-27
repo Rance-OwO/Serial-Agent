@@ -143,6 +143,34 @@ export class KeilToolchainService {
     };
   }
 
+  async listProjectFilesInFolder(folderPath: string): Promise<string[]> {
+    if (!folderPath || !fs.existsSync(folderPath) || !fs.statSync(folderPath).isDirectory()) {
+      return [];
+    }
+
+    const results: string[] = [];
+    const walk = (currentPath: string): void => {
+      for (const entry of fs.readdirSync(currentPath, { withFileTypes: true })) {
+        if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === '_Reference') {
+          continue;
+        }
+
+        const nextPath = path.join(currentPath, entry.name);
+        if (entry.isDirectory()) {
+          walk(nextPath);
+          continue;
+        }
+
+        if (/\.(uvprojx|uvproj)$/i.test(entry.name)) {
+          results.push(nextPath);
+        }
+      }
+    };
+
+    walk(folderPath);
+    return results.sort((a, b) => a.localeCompare(b)).slice(0, 50);
+  }
+
   async listProjectFiles(): Promise<string[]> {
     const result = new Set<string>();
     const configured = stripWrappedQuotes(this.getConfigValue<string>('keil.projectFile', '').trim());
@@ -299,6 +327,7 @@ export class KeilToolchainService {
     const selectedTarget = this.resolveTargetName(projectMeta);
     const artifactPath = artifactPathInput ?? await this.resolveArtifact(projectFile, projectMeta, selectedTarget);
     const flashMethod = this.resolveFlashMethod();
+    this.output.appendLine(`[Flash] Method: ${flashMethod}`);
 
     if (flashMethod === 'stlink') {
       return this.flashWithStLink(projectFile, artifactPath, selectedTarget);
