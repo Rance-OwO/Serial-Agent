@@ -629,7 +629,7 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
         <div class="firmware-config-grid">
           <button class="firmware-route-card" type="button" data-firmware-route="build">
             <span class="firmware-route-card-title">Build Essentials</span>
-            <span class="firmware-route-card-text">UV4 or MDK path, project file, target.</span>
+            <span class="firmware-route-card-text">UV4.exe path, optional ARMCC5 toolchain path, project file, target.</span>
           </button>
           <button class="firmware-route-card" type="button" data-firmware-route="flash">
             <span class="firmware-route-card-title">Flash Essentials</span>
@@ -646,15 +646,22 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
         <div class="firmware-config-list">
           <div class="firmware-config-item">
             <div class="firmware-config-item-copy">
-              <div class="firmware-config-item-title">UV4 or MDK Path</div>
-              <div id="fw-build-uv4" class="firmware-config-item-text">Pick UV4.exe first so build can run from the extension.</div>
+              <div class="firmware-config-item-title">UV4.exe Path</div>
+              <div id="fw-build-uv4" class="firmware-config-item-text">填写 Keil 命令行构建使用的 UV4.exe 完整路径，例如 C:\Keil_v5\UV4\UV4.exe</div>
             </div>
             <button class="btn-secondary btn-compact" type="button" data-firmware-action="pickUv4Path" data-keil-busy-lock="true">Choose UV4.exe</button>
           </div>
           <div class="firmware-config-item">
             <div class="firmware-config-item-copy">
+              <div class="firmware-config-item-title">ARMCC5 Toolchain Path</div>
+              <div id="fw-build-armcc5" class="firmware-config-item-text">可选，填写 ARMCC5 的 bin 目录，不是 exe 文件，例如 C:\Keil_v5\ARM\ARMCC\bin</div>
+            </div>
+            <button class="btn-secondary btn-compact" type="button" data-firmware-action="pickArmcc5Path" data-keil-busy-lock="true">Choose ARMCC5 Folder</button>
+          </div>
+          <div class="firmware-config-item">
+            <div class="firmware-config-item-copy">
               <div class="firmware-config-item-title">Project File</div>
-              <div id="fw-build-project" class="firmware-config-item-text">Select the active .uvprojx or .uvproj file.</div>
+              <div id="fw-build-project" class="firmware-config-item-text">填写 .uvprojx 或 .uvproj；支持相对路径和绝对路径，例如 firmware\app.uvprojx 或 D:\work\firmware\app.uvprojx</div>
             </div>
             <button class="btn-secondary btn-compact" type="button" data-firmware-action="pickProjectFile" data-keil-busy-lock="true">Choose Project File</button>
           </div>
@@ -690,15 +697,15 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
           </div>
         </div>
         <div class="firmware-config-grid firmware-config-grid-flash">
-          <button class="firmware-route-card" type="button" data-firmware-route="jlink">
+          <button class="firmware-route-card" type="button" data-firmware-route="jlink" data-firmware-action="selectJlinkFlasher" data-keil-busy-lock="true">
             <span class="firmware-route-card-title">JLink</span>
             <span class="firmware-route-card-text">Install path, CPU, interface, speed, base address.</span>
           </button>
-          <button class="firmware-route-card" type="button" data-firmware-route="stlink">
+          <button class="firmware-route-card" type="button" data-firmware-route="stlink" data-firmware-action="selectStlinkFlasher" data-keil-busy-lock="true">
             <span class="firmware-route-card-title">ST-Link</span>
             <span class="firmware-route-card-text">CLI path, interface, speed, reset mode, run after program.</span>
           </button>
-          <button class="firmware-route-card" type="button" data-firmware-route="openocd">
+          <button class="firmware-route-card" type="button" data-firmware-route="openocd" data-firmware-action="selectOpenOcdFlasher" data-keil-busy-lock="true">
             <span class="firmware-route-card-title">OpenOCD</span>
             <span class="firmware-route-card-text">Executable, Chip Config, Interface Config, sequence.</span>
           </button>
@@ -710,7 +717,7 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
           <div class="firmware-config-item">
             <div class="firmware-config-item-copy">
               <div class="firmware-config-item-title">Install Directory</div>
-              <div id="fw-jlink-install" class="firmware-config-item-text">Choose the JLink install directory.</div>
+              <div id="fw-jlink-install" class="firmware-config-item-text">填写 JLink 安装目录，不是 JLink.exe 文件，例如 C:\Program Files\SEGGER\JLink</div>
             </div>
             <button class="btn-secondary btn-compact" type="button" data-firmware-action="pickJlinkInstallDir" data-keil-busy-lock="true">Choose Install Directory</button>
           </div>
@@ -753,7 +760,7 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
           <div class="firmware-config-item">
             <div class="firmware-config-item-copy">
               <div class="firmware-config-item-title">STM32 Programmer CLI</div>
-              <div id="fw-stlink-exe" class="firmware-config-item-text">Choose STM32_Programmer_CLI.exe and the matching flash parameters.</div>
+              <div id="fw-stlink-exe" class="firmware-config-item-text">填写 STM32_Programmer_CLI.exe 完整路径，例如 C:\ST\STM32CubeCLT\STM32CubeProgrammer\bin\STM32_Programmer_CLI.exe</div>
             </div>
             <button class="btn-secondary btn-compact" type="button" data-firmware-action="pickStlinkExePath" data-keil-busy-lock="true">Choose CLI Path</button>
           </div>
@@ -803,21 +810,21 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
           <div class="firmware-config-item">
             <div class="firmware-config-item-copy">
               <div class="firmware-config-item-title">OpenOCD Executable</div>
-              <div id="fw-openocd-exe" class="firmware-config-item-text">Point to openocd.exe before selecting configs.</div>
+              <div id="fw-openocd-exe" class="firmware-config-item-text">填写 openocd.exe 完整路径，例如 C:\OpenOCD\bin\openocd.exe</div>
             </div>
             <button class="btn-secondary btn-compact" type="button" data-firmware-action="pickOpenOcdExePath" data-keil-busy-lock="true">Choose openocd.exe</button>
           </div>
           <div class="firmware-config-item">
             <div class="firmware-config-item-copy">
               <div class="firmware-config-item-title">Chip Config</div>
-              <div id="fw-openocd-target" class="firmware-config-item-text">Choose the target cfg from detected OpenOCD scripts.</div>
+              <div id="fw-openocd-target" class="firmware-config-item-text">填写 short name，不是路径，例如 stm32f4x；不要填 target\stm32f4x.cfg</div>
             </div>
             <button class="btn-primary btn-compact" type="button" data-firmware-action="pickOpenOcdTarget" data-keil-busy-lock="true">Choose Chip Config</button>
           </div>
           <div class="firmware-config-item">
             <div class="firmware-config-item-copy">
               <div class="firmware-config-item-title">Interface Config</div>
-              <div id="fw-openocd-interface" class="firmware-config-item-text">Choose the interface cfg from detected OpenOCD scripts.</div>
+              <div id="fw-openocd-interface" class="firmware-config-item-text">填写 short name，不是路径，例如 cmsis-dap；不要填 interface\cmsis-dap.cfg</div>
             </div>
             <button class="btn-primary btn-compact" type="button" data-firmware-action="pickOpenOcdInterface" data-keil-busy-lock="true">Choose Interface Config</button>
           </div>

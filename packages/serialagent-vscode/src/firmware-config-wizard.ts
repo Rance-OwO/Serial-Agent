@@ -40,6 +40,9 @@ export class FirmwareConfigController {
       case 'pickUv4Path':
         await this.editUv4Path();
         return undefined;
+      case 'pickArmcc5Path':
+        await this.editArmcc5Path();
+        return undefined;
       case 'pickProjectFile':
         await this.editProjectFile();
         return undefined;
@@ -51,6 +54,12 @@ export class FirmwareConfigController {
         return undefined;
       case 'pickFlashMethod':
         return this.editFlashMethod();
+      case 'selectJlinkFlasher':
+        return this.selectFlashMethod('jlink');
+      case 'selectStlinkFlasher':
+        return this.selectFlashMethod('stlink');
+      case 'selectOpenOcdFlasher':
+        return this.selectFlashMethod('openocd');
       case 'pickJlinkInstallDir':
         await this.editJLinkInstallDirectory();
         return undefined;
@@ -138,13 +147,28 @@ export class FirmwareConfigController {
     const snapshot = this.toolchain.getConfigSnapshot();
     const uv4Path = await this.pickExecutablePath({
       title: 'Build: UV4.exe',
-      placeHolder: 'Choose the MDK UV4 executable used for command-line build.',
+      placeHolder: 'Select the Keil MDK-ARM UV4 executable used for command-line build. Example: C:\\Keil_v5\\UV4\\UV4.exe',
       currentValue: snapshot.keil.uv4Path,
       suggestions: ['C:\\Keil_v5\\UV4\\UV4.exe'],
+      browseDetail: 'Select the Keil MDK-ARM UV4 executable. Example: C:\\Keil_v5\\UV4\\UV4.exe',
       filters: { Executable: ['exe'] },
     });
     if (uv4Path) {
       await this.updateSetting('keil.uv4Path', uv4Path);
+    }
+  }
+
+  private async editArmcc5Path(): Promise<void> {
+    const snapshot = this.toolchain.getConfigSnapshot();
+    const armcc5Path = await this.pickDirectoryPath({
+      title: 'Build: ARMCC5 Toolchain',
+      placeHolder: 'Optional ARMCC5 bin directory used to help UV4 resolve the AC5 toolchain. Example: C:\\Keil_v5\\ARM\\ARMCC\\bin',
+      currentValue: snapshot.keil.armcc5Path,
+      suggestions: ['C:\\Keil_v5\\ARM\\ARMCC\\bin'],
+      browseDetail: 'Select the ARMCC5 bin directory used by Keil AC5. Example: C:\\Keil_v5\\ARM\\ARMCC\\bin',
+    });
+    if (armcc5Path) {
+      await this.updateSetting('keil.armcc5Path', armcc5Path);
     }
   }
 
@@ -240,8 +264,12 @@ export class FirmwareConfigController {
       return undefined;
     }
 
+    return this.selectFlashMethod(flashMethod as FirmwareFlashMethod);
+  }
+
+  private async selectFlashMethod(flashMethod: FirmwareFlashMethod): Promise<FirmwareConfigActionResult> {
     await this.updateSetting('flash.method', flashMethod);
-    return { nextRoute: getRouteForFlashMethod(flashMethod as FirmwareFlashMethod) };
+    return { nextRoute: getRouteForFlashMethod(flashMethod) };
   }
 
   private async editJLinkInstallDirectory(): Promise<void> {
@@ -319,6 +347,7 @@ export class FirmwareConfigController {
       placeHolder: 'Choose STM32_Programmer_CLI.exe.',
       currentValue: snapshot.flash.stlink.exePath,
       suggestions: [],
+      browseDetail: 'Select the STM32CubeProgrammer CLI executable.',
       filters: { Executable: ['exe'] },
     });
     if (exePath) {
@@ -404,6 +433,7 @@ export class FirmwareConfigController {
       placeHolder: 'Choose the OpenOCD executable from an official package.',
       currentValue: snapshot.flash.openocd.exePath,
       suggestions: [],
+      browseDetail: 'Select the OpenOCD executable from your installation.',
       filters: { Executable: ['exe'] },
     });
     if (exePath) {
@@ -506,6 +536,7 @@ export class FirmwareConfigController {
     placeHolder: string;
     currentValue: string;
     suggestions: string[];
+    browseDetail: string;
     filters: Record<string, string[]>;
   }): Promise<string | undefined> {
     return this.pickPathLikeValue({
@@ -514,7 +545,7 @@ export class FirmwareConfigController {
       currentValue: options.currentValue,
       suggestions: options.suggestions,
       browseLabel: 'Browse for executable...',
-      browseDetail: 'Open a file picker and select the executable.',
+      browseDetail: options.browseDetail,
       pickPath: async () => {
         const files = await vscode.window.showOpenDialog({
           title: options.title,
@@ -534,6 +565,7 @@ export class FirmwareConfigController {
     placeHolder: string;
     currentValue: string;
     suggestions: string[];
+    browseDetail?: string;
   }): Promise<string | undefined> {
     return this.pickPathLikeValue({
       title: options.title,
@@ -541,7 +573,7 @@ export class FirmwareConfigController {
       currentValue: options.currentValue,
       suggestions: options.suggestions,
       browseLabel: 'Browse for folder...',
-      browseDetail: 'Open a folder picker and select the install directory.',
+      browseDetail: options.browseDetail ?? 'Open a folder picker and select the install directory.',
       pickPath: async () => {
         const folders = await vscode.window.showOpenDialog({
           title: options.title,

@@ -469,6 +469,7 @@ body.firmware-config-open .content-wrapper {
   font-size: 11px;
   line-height: 1.45;
   color: var(--vscode-descriptionForeground);
+  overflow-wrap: anywhere;
 }
 
 .firmware-config-actions {

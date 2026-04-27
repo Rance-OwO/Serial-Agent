@@ -240,6 +240,20 @@
 
     firmwareRouteButtons.forEach((button) => {
       button.addEventListener('click', () => {
+        if (keilBusy) {
+          return;
+        }
+
+        const action = button.getAttribute('data-firmware-action');
+        if (action) {
+          vscode.postMessage({
+            type: 'firmwareConfigAction',
+            action,
+            route: firmwareDrawerRoute,
+          });
+          return;
+        }
+
         navigateFirmwareDrawer(button.getAttribute('data-firmware-route') || 'home');
       });
     });
@@ -723,9 +737,7 @@
     if (!value) {
       return emptyText;
     }
-    const normalized = String(value).replace(/\\/g, '/');
-    const parts = normalized.split('/');
-    return parts[parts.length - 1] || emptyText;
+    return String(value);
   }
 
   function setFirmwareValue(id, text) {
@@ -747,7 +759,8 @@
     const stlink = flash.stlink || {};
     const openocd = flash.openocd || {};
 
-    setFirmwareValue('fw-build-uv4', formatFirmwarePath(keil.uv4Path, 'Choose UV4.exe'));
+    setFirmwareValue('fw-build-uv4', formatFirmwarePath(keil.uv4Path, 'Choose Keil MDK-ARM UV4.exe'));
+    setFirmwareValue('fw-build-armcc5', formatFirmwarePath(keil.armcc5Path, 'Optional ARMCC5 bin directory'));
     setFirmwareValue('fw-build-project', formatFirmwarePath(keil.projectFile, 'Choose .uvprojx / .uvproj'));
     setFirmwareValue('fw-build-target', keil.target || 'Choose target from the project');
 

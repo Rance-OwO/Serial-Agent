@@ -6,10 +6,14 @@ export type FirmwareF7Action = 'build' | 'flash' | 'buildAndFlash';
 export type FirmwareConfigRoute = 'home' | 'build' | 'flash' | 'jlink' | 'stlink' | 'openocd';
 export type FirmwareConfigAction =
   | 'pickUv4Path'
+  | 'pickArmcc5Path'
   | 'pickProjectFile'
   | 'pickTarget'
   | 'pickF7Action'
   | 'pickFlashMethod'
+  | 'selectJlinkFlasher'
+  | 'selectStlinkFlasher'
+  | 'selectOpenOcdFlasher'
   | 'pickJlinkInstallDir'
   | 'pickJlinkDevice'
   | 'pickJlinkInterface'
