@@ -17,7 +17,7 @@ Thumbs.db
 *.tgz
 
 # VS Code Extension
-*.vsix
+packages/serialagent-vscode/vsix-package-backup/
 
 # Keil Project - freertos_hello
 _KeilProject/freertos_hello/
