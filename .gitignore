@@ -37,3 +37,4 @@ tests/*
 !tests/keil-f7-action.test.ts
 !tests/firmware-config-model.test.ts
 AGENTS.md
+CLAUDE.md
