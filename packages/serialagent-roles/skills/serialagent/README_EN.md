@@ -16,6 +16,18 @@ It is designed to help an AI client use:
 
 This skill is not a replacement for either runtime component.
 
+The repository source location for this skill is:
+
+```text
+packages/serialagent-roles/skills/serialagent
+```
+
+When installing it into an AI client, keep the directory name as:
+
+```text
+serialagent
+```
+
 ## What It Is For
 
 Use this skill when an agent needs a consistent embedded debugging workflow,
@@ -45,6 +57,6 @@ serialagent
 
 ## Related Components
 
-- Product overview: [../../README_EN.md](../../README_EN.md)
-- VS Code extension: [../../packages/serialagent-vscode/README_EN.md](../../packages/serialagent-vscode/README_EN.md)
-- MCP server: [../../packages/serialagent-mcp/README_EN.md](../../packages/serialagent-mcp/README_EN.md)
+- Product overview: [../../../../README_EN.md](../../../../README_EN.md)
+- VS Code extension: [../../../serialagent-vscode/README_EN.md](../../../serialagent-vscode/README_EN.md)
+- MCP server: [../../../serialagent-mcp/README_EN.md](../../../serialagent-mcp/README_EN.md)

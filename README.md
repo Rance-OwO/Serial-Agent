@@ -57,11 +57,11 @@ MCP 文档：
 
 把这个 Skill 文件喂给 AI：
 
-- [skills/serialagent/SKILL.md](skills/serialagent/SKILL.md)
+- [packages/serialagent-roles/skills/serialagent/SKILL.md](packages/serialagent-roles/skills/serialagent/SKILL.md)
 
 推荐做法：
 
-- 如果你的客户端支持 skill 安装，优先用 `skill-creator` 固化这个 Skill
+- 如果你的客户端支持 skill 安装，优先用客户端自己的 skill 机制安装它
 - 如果当前客户端没有 skill 安装能力，也可以直接把 `SKILL.md` 内容喂给 AI
 
 完成插件、MCP 和 Skill 之后，就可以形成嵌入式闭环调试工作流。
@@ -129,11 +129,12 @@ AI IDE / Agent Client
 
 源码：
 
-- [skills/serialagent](skills/serialagent)
+- [packages/serialagent-roles](packages/serialagent-roles)
+- [packages/serialagent-roles/skills/serialagent](packages/serialagent-roles/skills/serialagent)
 
 文档：
 
-- [skills/serialagent/README.md](skills/serialagent/README.md)
+- [packages/serialagent-roles/skills/serialagent/README.md](packages/serialagent-roles/skills/serialagent/README.md)
 
 ## 为什么是 3 个交付物，但仍然保留 1 个源码仓
 
@@ -156,8 +157,9 @@ AI IDE / Agent Client
 packages/
   serialagent-vscode/
   serialagent-mcp/
-skills/
-  serialagent/
+  serialagent-roles/
+    skills/
+      serialagent/
 docs/
 tests/
 ```

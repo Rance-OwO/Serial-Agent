@@ -1,0 +1,11 @@
+{
+  "name": "@ranceowo/serialagent-roles",
+  "version": "1.1.0",
+  "private": true,
+  "description": "Serial Agent skill source and prompt assets for AI clients",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Rance-OwO/Serial-Agent"
+  },
+  "license": "MIT"
+}

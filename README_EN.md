@@ -51,6 +51,14 @@ Use the VS Code extension first, then configure `Serial Agent MCP`.
 Add the skill only when your client supports skills and you want guided agent
 workflows on top of the extension and MCP.
 
+### Step-by-step full setup
+
+1. Install the VS Code extension `Serial Agent`
+2. Configure `Serial Agent MCP`
+3. Give the skill from `packages/serialagent-roles/skills/serialagent` to your AI client
+
+If your client supports skill installation, install the `serialagent` directory using the client-specific skill mechanism. If not, feed `SKILL.md` directly into the model prompt.
+
 ## Three Deliverables
 
 ### 1. Serial Agent
@@ -90,11 +98,12 @@ effectively. It is not a replacement for the runtime.
 
 Source:
 
-- [skills/serialagent](skills/serialagent)
+- [packages/serialagent-roles](packages/serialagent-roles)
+- [packages/serialagent-roles/skills/serialagent](packages/serialagent-roles/skills/serialagent)
 
 Docs:
 
-- [skills/serialagent/README_EN.md](skills/serialagent/README_EN.md)
+- [packages/serialagent-roles/skills/serialagent/README_EN.md](packages/serialagent-roles/skills/serialagent/README_EN.md)
 
 ## How They Work Together
 
@@ -126,8 +135,9 @@ The release execution checklist is here:
 packages/
   serialagent-vscode/
   serialagent-mcp/
-skills/
-  serialagent/
+  serialagent-roles/
+    skills/
+      serialagent/
 docs/
 tests/
 ```

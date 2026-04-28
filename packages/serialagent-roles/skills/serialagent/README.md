@@ -13,6 +13,18 @@ Serial Agent Skill 是给 AI 客户端或代理使用的工作流增强层。它
 
 它不是运行时，也不替代插件或 MCP。
 
+仓库内的真实来源路径是：
+
+```text
+packages/serialagent-roles/skills/serialagent
+```
+
+安装到 AI 客户端时，目录名仍保持为：
+
+```text
+serialagent
+```
+
 ## 它适合做什么
 
 当你希望代理具备稳定的一致调试流程时，可以使用这个 skill，例如：
@@ -40,6 +52,6 @@ serialagent
 
 ## 相关组件
 
-- 产品总览：[../../README.md](../../README.md)
-- VS Code 插件：[../../packages/serialagent-vscode/README.md](../../packages/serialagent-vscode/README.md)
-- MCP 服务端：[../../packages/serialagent-mcp/README.md](../../packages/serialagent-mcp/README.md)
+- 产品总览：[../../../../README.md](../../../../README.md)
+- VS Code 插件：[../../../serialagent-vscode/README.md](../../../serialagent-vscode/README.md)
+- MCP 服务端：[../../../serialagent-mcp/README.md](../../../serialagent-mcp/README.md)
