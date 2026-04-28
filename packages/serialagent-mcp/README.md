@@ -12,7 +12,7 @@ English version: [README_EN.md](README_EN.md)
 
 - 产品总览，请看 [../../README.md](../../README.md)
 - VS Code 插件说明，请看 [../serialagent-vscode/README.md](../serialagent-vscode/README.md)
-- skill 说明，请看 [../../skills/serialagent/README.md](../../skills/serialagent/README.md)
+- skill 说明，请看 [../serialagent-roles/skills/serialagent/README.md](../serialagent-roles/skills/serialagent/README.md)
 
 ## 运行模型
 
@@ -64,7 +64,13 @@ npx -y @ranceowo/serial-agent-mcp
 ```bash
 npm install
 npm --workspace packages/serialagent-mcp run build
-node packages/serialagent-mcp/dist/index.js
+npm --workspace packages/serialagent-mcp run start
+```
+
+如果你需要直接运行版本化主产物，命名规则为：
+
+```bash
+node packages/serialagent-mcp/dist/serial-agent-mcp-<package-version>.js
 ```
 
 ## 对插件的依赖
@@ -105,8 +111,9 @@ node packages/serialagent-mcp/dist/index.js
 
 ## 维护者备注
 
-- 入口文件：`src/index.ts`
-- 构建输出：`dist/index.js`
+- 源码入口：`src/index.ts`
+- 主产物：`dist/serial-agent-mcp-<version>.js`
+- 兼容入口：`dist/index.js`
 - 正式发布前建议先运行：
 
 ```bash

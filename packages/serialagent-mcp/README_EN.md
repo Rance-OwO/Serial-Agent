@@ -15,7 +15,7 @@ extension, and the skill, see:
 
 - Product overview: [../../README_EN.md](../../README_EN.md)
 - VS Code extension: [../serialagent-vscode/README_EN.md](../serialagent-vscode/README_EN.md)
-- Skill: [../../skills/serialagent/README_EN.md](../../skills/serialagent/README_EN.md)
+- Skill: [../serialagent-roles/skills/serialagent/README_EN.md](../serialagent-roles/skills/serialagent/README_EN.md)
 
 ## Runtime Model
 
@@ -69,7 +69,13 @@ From the repository root:
 ```bash
 npm install
 npm --workspace packages/serialagent-mcp run build
-node packages/serialagent-mcp/dist/index.js
+npm --workspace packages/serialagent-mcp run start
+```
+
+If you need to run the versioned main artifact directly, the naming rule is:
+
+```bash
+node packages/serialagent-mcp/dist/serial-agent-mcp-<package-version>.js
 ```
 
 ## Dependency On The Extension
@@ -111,8 +117,9 @@ Recommended public distribution order:
 
 ## Maintainer Notes
 
-- Entry point: `src/index.ts`
-- Build output: `dist/index.js`
+- Source entry: `src/index.ts`
+- Main artifact: `dist/serial-agent-mcp-<version>.js`
+- Compatibility entry: `dist/index.js`
 - Before publishing, run:
 
 ```bash
