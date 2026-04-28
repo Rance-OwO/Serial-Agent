@@ -2,21 +2,21 @@
 
 English version: [README_EN.md](README_EN.md)
 
-`Serial Agent` 是一个面向嵌入式闭环调试场景的 AI 串口调试平台。它把 VS Code 插件、MCP 和 Skill 串成一条可复用的工作流，让你能把“看日志、发命令、分析问题、执行固件动作”交给 AI 和开发者协同完成。
+`Serial Agent` 是一个面向嵌入式串口调试与闭环验证场景的 AI 平台。它把 VS Code 插件、MCP 和 Skill 串成一条可复用的工作流，让你能把“看日志、发命令、分析问题、在需要时执行固件动作”交给 AI 和开发者协同完成。
 
 
 ## 这个项目能做到什么
 
 - 在 VS Code 中提供串口工作台
 - 通过 MCP 让 AI 访问串口、日志和固件工具
-- 通过 Skill 固化嵌入式调试工作流
-- 形成 `插件 -> MCP -> Skill -> AI Agent` 的闭环调试链路
+- 通过 Skill 教 AI 正确选择 MCP 工具和工作流
+- 形成 `AI Agent -> MCP -> Bridge -> 插件` 的本地调试链路
 
 ## 三步快速上手
 
 ### 第一步：安装 VS Code 插件 `Serial Agent`
 
-先安装 VS Code 插件 `Serial Agent`。这是整个闭环调试的运行时入口。
+先安装 VS Code 插件 `Serial Agent`。这是整条本地调试链路的运行时入口。
 
 ![VS Code 插件安装](assets/vscode插件安装.png)
 
@@ -57,16 +57,16 @@ MCP 文档：
 
 把这个 Skill 文件喂给 AI：
 
-- [packages/serialagent-roles/skills/serialagent/SKILL.md](packages/serialagent-roles/skills/serialagent/SKILL.md)
+- [packages/serialagent-skill/SKILL.md](packages/serialagent-skill/SKILL.md)
 
 推荐做法：
 
 - 如果你的客户端支持 skill 安装，优先用客户端自己的 skill 机制安装它
 - 如果当前客户端没有 skill 安装能力，也可以直接把 `SKILL.md` 内容喂给 AI
 
-完成插件、MCP 和 Skill 之后，就可以形成嵌入式闭环调试工作流。
+完成插件、MCP 和 Skill 之后，你就拥有了一条可复用的本地调试链路。是否进入 build / flash 闭环，取决于当前任务；很多场景只需要开环串口通信。
 
-## 闭环调试是怎么工作的
+## 这条链路是怎么工作的
 
 当这三步都完成后，你就拥有了这样一条链路：
 
@@ -78,12 +78,12 @@ AI IDE / Agent Client
     -> Serial Device / Firmware Toolchain
 ```
 
-这意味着 AI 不只是“读说明文档”，而是能够真正参与：
+这意味着 AI 不只是“读说明文档”，而是能够通过 MCP tools 参与本地调试流程：
 
 - 读取串口状态
 - 观察 RX 日志
 - 发送 TX 命令
-- 调用 Keil / JLink 动作
+- 在需要时调用 build / flash 动作
 - 基于证据形成调试结论
 
 ## 项目源码介绍
@@ -101,7 +101,7 @@ AI IDE / Agent Client
 - 串口 UI
 - 本地串口状态
 - Bridge 生命周期
-- Keil 和 JLink 动作
+- Keil 和当前配置的 flasher 动作
 
 源码：
 
@@ -125,16 +125,15 @@ AI IDE / Agent Client
 
 ### 3. Serial Agent Skill
 
-这是工作流增强层。它帮助 AI 或代理更稳定地使用插件和 MCP，但它本身不是运行时。
+这是工作流增强层。它帮助 AI 或代理判断当前任务属于只读检查、开环串口操作还是闭环固件验证，并更稳定地使用插件和 MCP，但它本身不是运行时。
 
 源码：
 
-- [packages/serialagent-roles](packages/serialagent-roles)
-- [packages/serialagent-roles/skills/serialagent](packages/serialagent-roles/skills/serialagent)
+- [packages/serialagent-skill](packages/serialagent-skill)
 
 文档：
 
-- [packages/serialagent-roles/skills/serialagent/README.md](packages/serialagent-roles/skills/serialagent/README.md)
+- [packages/serialagent-skill/README.md](packages/serialagent-skill/README.md)
 
 ## 为什么是 3 个交付物，但仍然保留 1 个源码仓
 
@@ -157,9 +156,7 @@ AI IDE / Agent Client
 packages/
   serialagent-vscode/
   serialagent-mcp/
-  serialagent-roles/
-    skills/
-      serialagent/
+  serialagent-skill/
 docs/
 tests/
 ```

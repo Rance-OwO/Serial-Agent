@@ -12,7 +12,7 @@ English version: [README_EN.md](README_EN.md)
 
 - 产品总览，请看 [../../README.md](../../README.md)
 - VS Code 插件说明，请看 [../serialagent-vscode/README.md](../serialagent-vscode/README.md)
-- skill 说明，请看 [../serialagent-roles/skills/serialagent/README.md](../serialagent-roles/skills/serialagent/README.md)
+- skill 说明，请看 [../serialagent-skill/README.md](../serialagent-skill/README.md)
 
 ## 运行模型
 

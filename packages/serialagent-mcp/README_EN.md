@@ -15,7 +15,7 @@ extension, and the skill, see:
 
 - Product overview: [../../README_EN.md](../../README_EN.md)
 - VS Code extension: [../serialagent-vscode/README_EN.md](../serialagent-vscode/README_EN.md)
-- Skill: [../serialagent-roles/skills/serialagent/README_EN.md](../serialagent-roles/skills/serialagent/README_EN.md)
+- Skill: [../serialagent-skill/README_EN.md](../serialagent-skill/README_EN.md)
 
 ## Runtime Model
 

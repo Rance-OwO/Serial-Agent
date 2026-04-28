@@ -137,8 +137,8 @@ Notes:
 
 Recommended docs:
 
-- [../serialagent-roles/skills/serialagent/README_EN.md](../serialagent-roles/skills/serialagent/README_EN.md)
-- [../serialagent-roles/skills/serialagent/SKILL.md](../serialagent-roles/skills/serialagent/SKILL.md)
+- [../serialagent-skill/README_EN.md](../serialagent-skill/README_EN.md)
+- [../serialagent-skill/SKILL.md](../serialagent-skill/SKILL.md)
 
 This skill does not replace the extension or the MCP server. It gives the AI a more stable prompt and workflow contract for tasks such as:
 
@@ -220,7 +220,7 @@ If you need the full product workflow rather than the extension in isolation, co
 
 - Product overview: [../../README_EN.md](../../README_EN.md)
 - MCP docs: [../serialagent-mcp/README_EN.md](../serialagent-mcp/README_EN.md)
-- Skill docs: [../serialagent-roles/skills/serialagent/README_EN.md](../serialagent-roles/skills/serialagent/README_EN.md)
+- Skill docs: [../serialagent-skill/README_EN.md](../serialagent-skill/README_EN.md)
 
 ## Development Notes
 

@@ -137,8 +137,8 @@ npm --workspace packages/serialagent-vscode run pack
 
 推荐阅读：
 
-- [../serialagent-roles/skills/serialagent/README.md](../serialagent-roles/skills/serialagent/README.md)
-- [../serialagent-roles/skills/serialagent/SKILL.md](../serialagent-roles/skills/serialagent/SKILL.md)
+- [../serialagent-skill/README.md](../serialagent-skill/README.md)
+- [../serialagent-skill/SKILL.md](../serialagent-skill/SKILL.md)
 
 这个 skill 的作用不是替代插件或 MCP，而是给 AI 一个更稳定的提示词和工作流约束，例如：
 
@@ -220,7 +220,7 @@ AI IDE / Agent Client
 
 - 项目总览：[../../README.md](../../README.md)
 - MCP 文档：[../serialagent-mcp/README.md](../serialagent-mcp/README.md)
-- Skill 文档：[../serialagent-roles/skills/serialagent/README.md](../serialagent-roles/skills/serialagent/README.md)
+- Skill 文档：[../serialagent-skill/README.md](../serialagent-skill/README.md)
 
 ## 开发说明
 

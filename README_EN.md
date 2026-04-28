@@ -2,7 +2,7 @@
 
 中文版本：[README.md](README.md)
 
-Serial Agent is an AI-powered embedded serial debugging platform.
+Serial Agent is an AI-powered embedded serial debugging and verification platform.
 
 Source repository:
 
@@ -55,9 +55,12 @@ workflows on top of the extension and MCP.
 
 1. Install the VS Code extension `Serial Agent`
 2. Configure `Serial Agent MCP`
-3. Give the skill from `packages/serialagent-roles/skills/serialagent` to your AI client
+3. Give the skill from `packages/serialagent-skill` to your AI client
 
 If your client supports skill installation, install the `serialagent` directory using the client-specific skill mechanism. If not, feed `SKILL.md` directly into the model prompt.
+
+Not every task needs a build-and-flash loop. Some tasks are read-only or
+open-loop serial interactions on an already running device.
 
 ## Three Deliverables
 
@@ -68,7 +71,7 @@ The VS Code extension is the primary product. It owns:
 - serial UI
 - local serial state
 - Bridge server lifecycle
-- Keil and JLink actions
+- Keil and the currently configured flasher actions
 
 Source:
 
@@ -93,17 +96,18 @@ Docs:
 
 ### 3. Serial Agent Skill
 
-The skill is the workflow layer. It helps agents use the extension and MCP more
-effectively. It is not a replacement for the runtime.
+The skill is the workflow layer. It helps agents decide whether a task is
+read-only, open-loop serial work, or closed-loop firmware verification, then
+use MCP tools, the extension, and the local Bridge more effectively. It is not
+a replacement for the runtime.
 
 Source:
 
-- [packages/serialagent-roles](packages/serialagent-roles)
-- [packages/serialagent-roles/skills/serialagent](packages/serialagent-roles/skills/serialagent)
+- [packages/serialagent-skill](packages/serialagent-skill)
 
 Docs:
 
-- [packages/serialagent-roles/skills/serialagent/README_EN.md](packages/serialagent-roles/skills/serialagent/README_EN.md)
+- [packages/serialagent-skill/README_EN.md](packages/serialagent-skill/README_EN.md)
 
 ## How They Work Together
 
@@ -135,9 +139,7 @@ The release execution checklist is here:
 packages/
   serialagent-vscode/
   serialagent-mcp/
-  serialagent-roles/
-    skills/
-      serialagent/
+  serialagent-skill/
 docs/
 tests/
 ```
