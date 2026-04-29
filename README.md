@@ -4,7 +4,6 @@ English version: [README_EN.md](README_EN.md)
 
 `Serial Agent` 是一个面向嵌入式串口调试与闭环验证场景的 AI 平台。它把 VS Code 插件、MCP 和 Skill 串成一条可复用的工作流，让你能把“看日志、发命令、分析问题、在需要时执行固件动作”交给 AI 和开发者协同完成。
 
-
 ## 这个项目能做到什么
 
 - 在 VS Code 中提供串口工作台
@@ -26,7 +25,7 @@ English version: [README_EN.md](README_EN.md)
 
 ### 第二步：给 AI Agent 配置 MCP
 
-推荐使用 `CC Switch` 进行入下图 MCP 配置。  
+推荐使用 `CC Switch` 进行入下图 MCP 配置。
 ![CC Switch 配置MCP](assets/ccswitch配置MCP.png)
 
 如果你习惯让 AI 自己完成配置，也可以直接把下面这段提示词发给 AI：
@@ -148,7 +147,6 @@ AI IDE / Agent Client
 - 插件和 MCP 在运行时仍然强耦合
 - Skill 现在是工作流增强层，不是独立运行时
 - 单仓更适合保持版本、README、Issue 和架构文档同步
-
 
 ## 仓库结构
 
