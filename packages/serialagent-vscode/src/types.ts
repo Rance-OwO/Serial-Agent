@@ -5,6 +5,12 @@
  * 抽取为独立模块以支持 BridgeServer 单元测试（无需依赖 vscode）。
  */
 
+/** listPorts 选项：快扫仅 serialport.list，全量含 Windows 元数据 */
+export interface ListPortsOptions {
+  metadata?: 'full' | 'skip';
+  forceMetadata?: boolean;
+}
+
 /** 串口设备信息 */
 export interface PortInfo {
   path: string;
@@ -55,7 +61,7 @@ export interface ISerialManager {
   readonly txBytes: number;
   readonly config: SerialConfig;
 
-  listPorts(): Promise<PortInfo[]>;
+  listPorts(options?: ListPortsOptions): Promise<PortInfo[]>;
   connect(config: SerialConfig): Promise<boolean>;
   disconnect(): Promise<void>;
   send(data: string, hexMode: boolean, lineEnding: string): Promise<boolean>;

@@ -1,5 +1,5 @@
 import { execFile } from 'child_process';
-import { PortInfo, SerialConfig, DEFAULT_CONFIG, ISerialManager } from './types';
+import { ListPortsOptions, PortInfo, SerialConfig, DEFAULT_CONFIG, ISerialManager } from './types';
 
 type SerialPortClass = import('serialport').SerialPort;
 type SerialPortStatic = typeof import('serialport').SerialPort;
@@ -11,6 +11,10 @@ const MAX_LOG_LINES = 5000;
 const MAX_RX_BUFFER = 1024 * 1024;
 const RECONNECT_INTERVAL_MS = 2000;
 const PORT_METADATA_TIMEOUT_MS = 3000;
+const DEFAULT_METADATA_CACHE_MS = 30_000;
+
+let cachedWindowsMetadata: Map<string, WindowsPortMetadata> | null = null;
+let cachedWindowsMetadataAt = 0;
 
 interface RawSerialPortInfo {
   path: string;
@@ -83,7 +87,7 @@ export class SerialManager implements SerialRuntime {
     this._onCounterUpdate = opts.onCounterUpdate ?? null;
   }
 
-  async listPorts(): Promise<PortInfo[]> {
+  async listPorts(options?: ListPortsOptions): Promise<PortInfo[]> {
     const serialPort = requireSerialPort();
     if (!serialPort) {
       throw new Error(
@@ -91,21 +95,16 @@ export class SerialManager implements SerialRuntime {
       );
     }
     const ports = await serialPort.list() as RawSerialPortInfo[];
-    const windowsMetadata = await loadWindowsPortMetadata();
+    const metadataMode = options?.metadata ?? 'full';
 
-    return ports.map((port) => {
-      const metadata = windowsMetadata.get(port.path.toUpperCase());
-      return {
-        path: port.path,
-        manufacturer: port.manufacturer,
-        productId: port.productId,
-        vendorId: port.vendorId,
-        serialNumber: port.serialNumber,
-        pnpId: port.pnpId ?? metadata?.pnpId,
-        friendlyName: port.friendlyName ?? metadata?.friendlyName,
-        driverLabel: metadata?.driverLabel ?? normalizeDriverLabel(port.friendlyName),
-      };
+    if (metadataMode === 'skip') {
+      return mapRawPorts(ports, new Map());
+    }
+
+    const windowsMetadata = await loadWindowsPortMetadata({
+      force: options?.forceMetadata === true,
     });
+    return mapRawPorts(ports, windowsMetadata);
   }
 
   async connect(config: SerialConfig): Promise<boolean> {
@@ -367,6 +366,46 @@ export class SerialManager implements SerialRuntime {
   }
 }
 
+export function portPathsFingerprint(ports: PortInfo[]): string {
+  return ports
+    .map((port) => port.path)
+    .sort((a, b) => a.localeCompare(b))
+    .join('\0');
+}
+
+export function portsContentFingerprint(ports: PortInfo[]): string {
+  return ports
+    .map((port) => [
+      port.path,
+      port.friendlyName ?? '',
+      port.driverLabel ?? '',
+      port.vendorId ?? '',
+      port.productId ?? '',
+      port.manufacturer ?? '',
+    ].join('|'))
+    .sort((a, b) => a.localeCompare(b))
+    .join('\0');
+}
+
+function mapRawPorts(
+  ports: RawSerialPortInfo[],
+  windowsMetadata: Map<string, WindowsPortMetadata>,
+): PortInfo[] {
+  return ports.map((port) => {
+    const metadata = windowsMetadata.get(port.path.toUpperCase());
+    return {
+      path: port.path,
+      manufacturer: port.manufacturer,
+      productId: port.productId,
+      vendorId: port.vendorId,
+      serialNumber: port.serialNumber,
+      pnpId: port.pnpId ?? metadata?.pnpId,
+      friendlyName: port.friendlyName ?? metadata?.friendlyName,
+      driverLabel: metadata?.driverLabel ?? normalizeDriverLabel(port.friendlyName),
+    };
+  });
+}
+
 function normalizeDriverLabel(label?: string): string | undefined {
   if (!label) {
     return undefined;
@@ -380,9 +419,21 @@ function normalizeDriverLabel(label?: string): string | undefined {
   return normalized.length > 0 ? normalized : undefined;
 }
 
-async function loadWindowsPortMetadata(): Promise<Map<string, WindowsPortMetadata>> {
+async function loadWindowsPortMetadata(options?: {
+  force?: boolean;
+  maxAgeMs?: number;
+}): Promise<Map<string, WindowsPortMetadata>> {
   if (process.platform !== 'win32') {
     return new Map();
+  }
+
+  const maxAgeMs = options?.maxAgeMs ?? DEFAULT_METADATA_CACHE_MS;
+  if (
+    !options?.force
+    && cachedWindowsMetadata
+    && Date.now() - cachedWindowsMetadataAt < maxAgeMs
+  ) {
+    return cachedWindowsMetadata;
   }
 
   const powershell = process.env.SystemRoot
@@ -417,18 +468,21 @@ async function loadWindowsPortMetadata(): Promise<Map<string, WindowsPortMetadat
   });
 
   if (!stdout) {
-    return new Map();
+    return cachedWindowsMetadata ?? new Map();
   }
 
   try {
     const parsed = JSON.parse(stdout) as WindowsPortMetadata | WindowsPortMetadata[];
     const items = Array.isArray(parsed) ? parsed : [parsed];
-    return new Map(
+    const metadata = new Map(
       items
         .filter((item) => typeof item.path === 'string' && item.path.length > 0)
         .map((item) => [item.path.toUpperCase(), item]),
     );
+    cachedWindowsMetadata = metadata;
+    cachedWindowsMetadataAt = Date.now();
+    return metadata;
   } catch {
-    return new Map();
+    return cachedWindowsMetadata ?? new Map();
   }
 }

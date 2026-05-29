@@ -103,6 +103,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(keilOutputChannel);
 
   const provider = new SerialPanelProvider(context, serialManager, updateStatusBar);
+  context.subscriptions.push(provider);
   const readPanelUiState = (): SerialPanelUiState => context.globalState.get<SerialPanelUiState>(
     SERIAL_PANEL_UI_STATE_KEY,
     {
@@ -256,13 +257,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('serialagent.refreshPorts', async () => {
-      try {
-        const ports = await serialManager.listPorts();
-        provider.postMessage({ type: 'updatePorts', ports });
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        vscode.window.showErrorMessage(`[Serial Agent] Scan failed: ${msg}`);
-      }
+      await provider.refreshPortList({ forceFull: true });
     }),
   );
 
@@ -474,6 +469,13 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration('serialagent')) {
         void refreshFirmwareConfigState();
+      }
+      if (
+        event.affectsConfiguration('serialagent.portAutoRefresh')
+        || event.affectsConfiguration('serialagent.portRefreshIntervalMs')
+        || event.affectsConfiguration('serialagent.portRefreshMetadataIntervalMs')
+      ) {
+        provider.handlePortRefreshConfigChange();
       }
     }),
   );

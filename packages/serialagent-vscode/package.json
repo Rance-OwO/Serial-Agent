@@ -2,7 +2,7 @@
   "name": "serialagent-vscode",
   "displayName": "Serial Agent",
   "description": "Serial monitor, MCP bridge, and firmware actions for embedded debugging in VS Code.",
-  "version": "1.1.12",
+  "version": "1.1.14",
   "publisher": "ranceowo",
   "license": "MIT",
   "icon": "media/SerialAgent.png",
@@ -345,6 +345,27 @@
             "low-reset"
           ],
           "markdownDescription": "OpenOCD flash sequence. `helper` uses the standard `program` helper. `low-reset` is an experimental explicit sequence that aims to reduce visible restart count on some boards."
+        },
+        "serialagent.portAutoRefresh": {
+          "type": "boolean",
+          "default": true,
+          "scope": "machine",
+          "markdownDescription": "Automatically refresh the serial port list while the Serial Agent panel is visible."
+        },
+        "serialagent.portRefreshIntervalMs": {
+          "type": "number",
+          "default": 3000,
+          "minimum": 1000,
+          "maximum": 30000,
+          "scope": "machine",
+          "markdownDescription": "Polling interval in milliseconds when port auto-refresh is enabled and the panel is visible."
+        },
+        "serialagent.portRefreshMetadataIntervalMs": {
+          "type": "number",
+          "default": 30000,
+          "minimum": 5000,
+          "scope": "machine",
+          "markdownDescription": "On Windows, how often to refresh friendly port names via PowerShell. Port add/remove is still detected at the faster polling interval."
         }
       }
     },
@@ -391,6 +412,10 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/Rance-OwO/Serial-Agent"
+  },
+  "vsce": {
+    "baseContentUrl": "https://github.com/Rance-OwO/Serial-Agent/blob/main/packages/serialagent-vscode/",
+    "baseImagesUrl": "https://raw.githubusercontent.com/Rance-OwO/Serial-Agent/main/packages/serialagent-vscode/"
   },
   "devDependencies": {
     "@types/node": "^25.3.2",

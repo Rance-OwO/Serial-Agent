@@ -7,6 +7,7 @@ import {
   FirmwareConfigSummary,
 } from './firmware-config-model';
 import type { SerialRuntime } from './serial-manager';
+import { PortAutoRefresh } from './port-auto-refresh';
 import { DEFAULT_CONFIG, SerialConfig } from './types';
 
 const DEFAULT_BAUDRATES = [
@@ -41,7 +42,7 @@ interface SerialPanelUiState {
   firmwareDrawerStack?: FirmwareConfigRoute[];
 }
 
-export class SerialPanelProvider implements vscode.WebviewViewProvider {
+export class SerialPanelProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   public static readonly viewType = 'serialagent.serialPanel';
   public static readonly panelViewType = 'serialagent.serialPanel.tab';
 
@@ -49,12 +50,24 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
   private _panel?: vscode.WebviewPanel;
   private _firmwareConfigSnapshot?: FirmwareConfigSnapshot;
   private _firmwareConfigSummary?: FirmwareConfigSummary;
+  private readonly _portAutoRefresh: PortAutoRefresh;
 
   constructor(
     private readonly _context: vscode.ExtensionContext,
     private readonly _serialManager: SerialRuntime,
     private readonly _onStatusChange: (connected: boolean, portPath?: string, baudRate?: number) => void,
-  ) {}
+  ) {
+    this._portAutoRefresh = new PortAutoRefresh(
+      this._serialManager,
+      (ports) => {
+        this.postMessage({ type: 'updatePorts', ports });
+      },
+    );
+  }
+
+  dispose(): void {
+    this._portAutoRefresh.dispose();
+  }
 
   get panel(): vscode.WebviewPanel | undefined {
     return this._panel;
@@ -74,6 +87,13 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
     webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
     this._initializeView(webviewView.webview);
+
+    webviewView.onDidChangeVisibility(() => {
+      this._updatePortRefreshVisibility();
+    });
+    if (webviewView.visible) {
+      this._updatePortRefreshVisibility();
+    }
   }
 
   public resolveWebviewPanel(panel: vscode.WebviewPanel): void {
@@ -86,9 +106,54 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
 
     this._initializeView(panel.webview);
 
+    panel.onDidChangeViewState(() => {
+      this._updatePortRefreshVisibility();
+    });
+    if (panel.visible) {
+      this._updatePortRefreshVisibility();
+    }
+
     panel.onDidDispose(() => {
       this._panel = undefined;
+      this._updatePortRefreshVisibility();
     });
+  }
+
+  public async refreshPortList(options?: { forceFull?: boolean; silent?: boolean }): Promise<void> {
+    try {
+      if (options?.forceFull) {
+        const ports = await this._serialManager.listPorts({
+          metadata: 'full',
+          forceMetadata: true,
+        });
+        this._portAutoRefresh.syncFingerprints(ports);
+        this.postMessage({ type: 'updatePorts', ports });
+        return;
+      }
+
+      const ports = await this._portAutoRefresh.refreshOnce();
+      if (ports) {
+        this.postMessage({ type: 'updatePorts', ports });
+      }
+    } catch (err: unknown) {
+      if (options?.silent) {
+        return;
+      }
+      const msg = err instanceof Error ? err.message : String(err);
+      vscode.window.showErrorMessage(`[Serial Agent] Scan failed: ${msg}`);
+    }
+  }
+
+  public handlePortRefreshConfigChange(): void {
+    this._portAutoRefresh.handleConfigChange();
+  }
+
+  private _isAnyViewVisible(): boolean {
+    return !!(this._view?.visible || this._panel?.visible);
+  }
+
+  private _updatePortRefreshVisibility(): void {
+    this._portAutoRefresh.onVisibilityChange(this._isAnyViewVisible());
   }
 
   public postMessage(message: Record<string, unknown>) {
@@ -267,11 +332,7 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
 
     this._setupWebviewMessageHandler(webview);
 
-    this._serialManager.listPorts().then((ports) => {
-      this.postMessage({ type: 'updatePorts', ports });
-    }).catch(() => {
-      // Ignore port-scan failures during initialization.
-    });
+    void this.refreshPortList({ forceFull: true, silent: true });
 
     this.postMessage({
       type: 'restoreConfig',
@@ -303,13 +364,7 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider {
     webview.onDidReceiveMessage(async (data) => {
       switch (data.type) {
         case 'refreshPorts': {
-          try {
-            const ports = await this._serialManager.listPorts();
-            this.postMessage({ type: 'updatePorts', ports });
-          } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : String(err);
-            vscode.window.showErrorMessage(`[Serial Agent] Scan failed: ${msg}`);
-          }
+          await this.refreshPortList({ forceFull: true });
           break;
         }
 
