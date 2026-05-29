@@ -5,6 +5,13 @@ node_modules/
 dist/
 out/
 
+# Build / release artifacts
+dist-bridge/
+*.vsix
+
+# Local release bundles (use GitHub Releases instead)
+__Release/
+
 # IDE
 .vscode/
 !packages/serialagent-vscode/.vscode/
@@ -26,15 +33,25 @@ _KeilProject/freertos_hello/
 _Reference/
 _KeilProject
 
-# AI IDE config
+# AI IDE / agent tooling (local only — never commit)
+.cursor/
+.cursorrules
+.cursorignore
+.codex/
+.codex-*/
+.codex-npx-probe/
+.codex-tmp/
 .claude/
 .windsurf/
-.cursor/
-prodoc/
+.windsurfrules
+.agents/
+.aider*
+.continue/
 .playwright-cli/
 __coding_plan/
-tests/*
-!tests/keil-f7-action.test.ts
-!tests/firmware-config-model.test.ts
+prodoc/
+
+# AI assistant instruction files (local copies for agents)
 AGENTS.md
 CLAUDE.md
+GEMINI.md

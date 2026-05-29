@@ -16,7 +16,7 @@
     "clean": "npm run clean --workspaces --if-present",
     "watch": "npm run watch --workspaces --if-present",
     "bridge:build": "tsc -p tsconfig.bridge.json",
-    "bridge": "node dist-bridge/tests/test-bridge-real-hw.js",
+    "bridge": "npm run bridge:build && node dist-bridge/tests/test-bridge-real-hw.js",
     "test:e2e:keil-bootlog": "node tests/e2e-keil-flash-bootlog.js",
     "test": "vitest run",
     "test:watch": "vitest",
