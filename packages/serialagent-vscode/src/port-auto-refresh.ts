@@ -95,15 +95,15 @@ export class PortAutoRefresh implements vscode.Disposable {
         const pathsChanged = pathsFingerprint !== this._lastPathsFingerprint;
         const metadataStale = Date.now() - this._lastFullMetadataAt >= cfg.metadataIntervalMs;
 
-        if (pathsChanged || metadataStale) {
-          ports = await this._serialManager.listPorts({
-            metadata: 'full',
-            forceMetadata: pathsChanged,
-          });
-          this._lastFullMetadataAt = Date.now();
-        } else {
-          ports = quickPorts;
+        if (!pathsChanged && !metadataStale) {
+          return null;
         }
+
+        ports = await this._serialManager.listPorts({
+          metadata: 'full',
+          forceMetadata: pathsChanged,
+        });
+        this._lastFullMetadataAt = Date.now();
       }
 
       const contentFingerprint = portsContentFingerprint(ports);
