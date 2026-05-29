@@ -964,7 +964,7 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider, vscode.D
         <summary>Manage Quick Commands</summary>
         <div class="quick-command-form">
           <input id="quick-command-label" class="quick-command-input" type="text" placeholder="Label" />
-          <input id="quick-command-value" class="quick-command-input quick-command-value" type="text" placeholder="Command value" />
+          <textarea id="quick-command-value" class="quick-command-input quick-command-value" rows="3" placeholder="Command value"></textarea>
           <label class="option-item option-item-inline" title="Send the quick command as HEX bytes">
             <input type="checkbox" id="quick-command-hex" />
             <span>HEX</span>

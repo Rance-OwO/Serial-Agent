@@ -135,5 +135,13 @@ describe('SerialPanelProvider log config layout', () => {
     expect(html).toContain('Choose Project File');
     expect(html).toContain('Choose Target');
   });
+
+  it('uses a multiline textarea for quick command values', () => {
+    const provider = createProvider();
+    const html = (provider as any)._getHtmlForWebview(createWebview());
+
+    expect(html).toContain('<textarea id="quick-command-value"');
+    expect(html).not.toMatch(/<input[^>]*id="quick-command-value"/);
+  });
 });
 

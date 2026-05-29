@@ -759,6 +759,7 @@ body.firmware-config-open .content-wrapper {
 .quick-command-form {
   margin-top: 8px;
   flex-wrap: wrap;
+  align-items: flex-start;
 }
 
 .quick-command-input {
@@ -766,7 +767,12 @@ body.firmware-config-open .content-wrapper {
 }
 
 .quick-command-value {
-  flex: 1;
+  flex: 1 1 100%;
+  min-width: 0;
+  width: 100%;
+  font-family: var(--vscode-editor-font-family, 'Consolas', monospace);
+  line-height: 1.45;
+  resize: none;
 }
 
 .quick-command-manage-list {

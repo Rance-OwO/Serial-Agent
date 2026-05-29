@@ -107,7 +107,7 @@
   /** @type {HTMLInputElement | null} */
   const quickCommandLabelInput = /** @type {HTMLInputElement} */ (document.getElementById('quick-command-label'));
   /** @type {HTMLInputElement | null} */
-  const quickCommandValueInput = /** @type {HTMLInputElement} */ (document.getElementById('quick-command-value'));
+  const quickCommandValueInput = /** @type {HTMLTextAreaElement} */ (document.getElementById('quick-command-value'));
   /** @type {HTMLInputElement | null} */
   const quickCommandHexInput = /** @type {HTMLInputElement} */ (document.getElementById('quick-command-hex'));
   const quickCommandSaveBtn = document.getElementById('btn-quick-command-save');
