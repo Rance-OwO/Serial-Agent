@@ -63,6 +63,9 @@ describe('SerialPanelProvider log config layout', () => {
     expect(logToolbar).toContain('btn-copy-log');
     expect(logToolbar).toContain('btn-save-log');
     expect(logToolbar).toContain('btn-clear');
+    expect(logToolbar).toContain('btn-icon-compact');
+    expect(logToolbar).toContain('title="Clear logs"');
+    expect(logToolbar).not.toContain('>Clear<');
     expect(logToolbar).not.toContain('opt-auto-scroll');
 
     expect(optionsBar).toContain('opt-timestamp');

@@ -533,6 +533,32 @@ body.firmware-config-open .content-wrapper {
   font-size: 11px;
 }
 
+.btn-icon-compact {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 24px;
+  padding: 0;
+  font-size: 11px;
+}
+
+.btn-icon-compact .btn-icon-svg {
+  width: 16px;
+  height: 16px;
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  opacity: 0.85;
+}
+
+.btn-icon-compact:hover .btn-icon-svg {
+  opacity: 1;
+}
+
+.btn-icon-compact:active {
+  background: var(--vscode-button-secondaryHoverBackground, rgba(128, 128, 128, 0.35));
+}
+
 .keil-status {
   font-size: 11px;
   opacity: 0.85;
