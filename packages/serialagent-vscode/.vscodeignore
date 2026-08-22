@@ -26,3 +26,8 @@ node_modules/**
 !node_modules/debug/**
 !node_modules/ms/
 !node_modules/ms/**
+
+# 保留 @vscode/codicons（Webview accordion 图标字体）
+!node_modules/@vscode/
+!node_modules/@vscode/codicons/
+!node_modules/@vscode/codicons/**

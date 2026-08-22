@@ -2,7 +2,7 @@
   "name": "serialagent-vscode",
   "displayName": "Serial Agent",
   "description": "Serial monitor, MCP bridge, and firmware actions for embedded debugging in VS Code.",
-  "version": "1.1.14",
+  "version": "1.2.1",
   "publisher": "ranceowo",
   "license": "MIT",
   "icon": "media/SerialAgent.png",
@@ -98,12 +98,6 @@
         }
       },
       {
-        "command": "serialagent.toggleFocusMode",
-        "title": "Toggle Focus Mode",
-        "category": "Serial Agent",
-        "icon": "$(screen-full)"
-      },
-      {
         "command": "serialagent.keil.build",
         "title": "Build STM32 (Keil)",
         "category": "Serial Agent"
@@ -119,8 +113,13 @@
         "category": "Serial Agent"
       },
       {
+        "command": "serialagent.custom.run",
+        "title": "Run Custom Command",
+        "category": "Serial Agent"
+      },
+      {
         "command": "serialagent.keil.runF7Action",
-        "title": "Run F7 Keil Action",
+        "title": "Run F7 Action",
         "category": "Serial Agent"
       },
       {
@@ -193,9 +192,48 @@
           "scope": "resource",
           "enum": [
             "build",
-            "buildAndFlash"
+            "buildAndFlash",
+            "custom"
           ],
-          "markdownDescription": "Action triggered by `F7`. `build`: run Keil build only. `buildAndFlash`: build first, then flash via the configured flasher."
+          "markdownDescription": "Action triggered by `F7`. `build`: run Keil build only. `buildAndFlash`: build first, then flash via the configured flasher. `custom`: run the configured custom command."
+        },
+        "serialagent.custom.mode": {
+          "type": "string",
+          "default": "python",
+          "scope": "resource",
+          "enum": [
+            "python",
+            "command"
+          ],
+          "enumDescriptions": [
+            "Run a selected .py file with a selected Python interpreter.",
+            "Run a pasted command line or a selected executable."
+          ],
+          "markdownDescription": "Custom action mode. `python`: run a selected `.py` file with a selected Python interpreter. `command`: run a pasted command line or a selected executable."
+        },
+        "serialagent.custom.pythonPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "Python interpreter for Custom Python mode. Select a uv venv, venv, or system `python.exe` / `python`."
+        },
+        "serialagent.custom.script": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "markdownDescription": "Python script for Custom Python mode. Relative paths resolve from the workspace root."
+        },
+        "serialagent.custom.command": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "markdownDescription": "Command line for Custom Command mode. Paste a command or choose an executable. Windows runs it with `cmd.exe /d /s /c`. Linux/macOS runs it with `/bin/sh -lc`."
+        },
+        "serialagent.keil.expandMonitorOnBuildFlash": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "markdownDescription": "Expand Serial Monitor when Flash, Build + Flash, or Custom Command starts."
         },
         "serialagent.flash.method": {
           "type": "string",
@@ -389,11 +427,6 @@
           "command": "serialagent.openInTab",
           "group": "navigation",
           "when": "view == serialagent.serialPanel"
-        },
-        {
-          "command": "serialagent.toggleFocusMode",
-          "group": "navigation@2",
-          "when": "view == serialagent.serialPanel"
         }
       ]
     }
@@ -406,6 +439,7 @@
     "watch": "tsc -p tsconfig.json -w"
   },
   "dependencies": {
+    "@vscode/codicons": "^0.0.36",
     "iconv-lite": "^0.7.2",
     "serialport": "^12.0.0"
   },

@@ -14,6 +14,16 @@ interface ActionItem extends vscode.QuickPickItem {
   value: string;
 }
 
+function quoteCommandToken(token: string): string {
+  if (!token) {
+    return '""';
+  }
+  if (/[\s"]/.test(token)) {
+    return `"${token.replace(/"/g, '\\"')}"`;
+  }
+  return token;
+}
+
 function getRouteForFlashMethod(method: FirmwareFlashMethod): FirmwareConfigRoute {
   switch (method) {
     case 'stlink':
@@ -51,6 +61,18 @@ export class FirmwareConfigController {
         return undefined;
       case 'pickF7Action':
         await this.editF7Action();
+        return undefined;
+      case 'pickCustomMode':
+        await this.editCustomMode();
+        return undefined;
+      case 'pickCustomPython':
+        await this.editCustomPython();
+        return undefined;
+      case 'pickCustomScript':
+        await this.editCustomScript();
+        return undefined;
+      case 'pickCustomCommand':
+        await this.editCustomCommand();
         return undefined;
       case 'pickFlashMethod':
         return this.editFlashMethod();
@@ -239,11 +261,130 @@ export class FirmwareConfigController {
           detail: 'Build first, then flash with the selected flasher.',
           value: 'buildAndFlash',
         },
+        {
+          label: 'Custom',
+          description: snapshot.keil.f7Action === 'custom' ? 'Current' : undefined,
+          detail: 'Run the configured custom command.',
+          value: 'custom',
+        },
       ],
     });
     if (action) {
       await this.updateSetting('keil.f7Action', action);
     }
+  }
+
+  private async editCustomMode(): Promise<void> {
+    const snapshot = this.toolchain.getConfigSnapshot();
+    const mode = await this.pickChoice({
+      title: 'Custom: Mode',
+      placeHolder: 'Choose Python script or a pasted command.',
+      items: [
+        {
+          label: 'Python Script',
+          description: snapshot.custom.mode === 'python' ? 'Current' : undefined,
+          detail: 'Run a selected .py file with a selected Python interpreter, including uv venv.',
+          value: 'python',
+        },
+        {
+          label: 'Paste Command',
+          description: snapshot.custom.mode === 'command' ? 'Current' : undefined,
+          detail: 'Paste a command line, or choose an executable. Windows uses cmd.exe; Linux/macOS uses sh.',
+          value: 'command',
+        },
+      ],
+    });
+    if (!mode) {
+      return;
+    }
+
+    await this.updateSetting('custom.mode', mode);
+    if (mode === 'command') {
+      await this.editCustomCommand();
+    }
+  }
+
+  private async editCustomPython(): Promise<void> {
+    const snapshot = this.toolchain.getConfigSnapshot();
+    const pythonPath = await this.pickExecutablePath({
+      title: 'Custom: Python Interpreter',
+      placeHolder: 'Select python.exe from a uv venv, venv, or system Python.',
+      currentValue: snapshot.custom.pythonPath,
+      suggestions: [],
+      browseDetail: 'Select the Python interpreter used for Custom Python mode.',
+      filters: process.platform === 'win32' ? { Executable: ['exe'] } : { Executable: ['*'] },
+    });
+    if (pythonPath) {
+      await this.updateSetting('custom.pythonPath', pythonPath);
+    }
+  }
+
+  private async editCustomScript(): Promise<void> {
+    const files = await vscode.window.showOpenDialog({
+      title: 'Custom: Python Script',
+      canSelectFiles: true,
+      canSelectFolders: false,
+      canSelectMany: false,
+      openLabel: 'Use this script',
+      filters: { Python: ['py'] },
+    });
+    const scriptPath = files?.[0]?.fsPath;
+    if (scriptPath) {
+      await this.updateSetting('custom.script', this.toolchain.toWorkspaceRelativePath(scriptPath));
+    }
+  }
+
+  private async editCustomCommand(): Promise<void> {
+    const snapshot = this.toolchain.getConfigSnapshot();
+    const action = await this.pickChoice({
+      title: 'Custom: Command',
+      placeHolder: 'Paste a command line, or browse for an executable and add arguments.',
+      items: [
+        {
+          label: 'Paste command...',
+          detail: 'Type or paste the full command. Windows uses cmd.exe; Linux/macOS uses sh.',
+          value: '__paste__',
+        },
+        {
+          label: 'Browse executable...',
+          detail: 'Pick an executable, then add arguments in the command box.',
+          value: '__browse__',
+        },
+      ],
+    });
+    if (!action) {
+      return;
+    }
+
+    let initialValue = snapshot.custom.command;
+    if (action === '__browse__') {
+      const files = await vscode.window.showOpenDialog({
+        title: 'Custom: Executable',
+        canSelectFiles: true,
+        canSelectFolders: false,
+        canSelectMany: false,
+        openLabel: 'Use this executable',
+        filters: process.platform === 'win32'
+          ? { Executable: ['exe', 'bat', 'cmd'] }
+          : undefined,
+      });
+      const executablePath = files?.[0]?.fsPath;
+      if (!executablePath) {
+        return;
+      }
+      initialValue = quoteCommandToken(executablePath);
+    }
+
+    const command = await vscode.window.showInputBox({
+      title: 'Custom: Command',
+      prompt: 'Paste the full command, or add arguments after the selected executable. Windows uses cmd.exe; Linux/macOS uses sh.',
+      value: initialValue,
+      ignoreFocusOut: true,
+    });
+    if (command === undefined) {
+      return;
+    }
+    await this.updateSetting('custom.command', command.trim());
   }
 
   private async editFlashMethod(): Promise<FirmwareConfigActionResult | undefined> {
@@ -765,7 +906,18 @@ export class FirmwareConfigController {
       matchOnDescription: true,
       matchOnDetail: true,
     });
-    return picked?.value;
+    if (!picked) {
+      return undefined;
+    }
+    if (typeof picked.value === 'string' && picked.value.length > 0) {
+      return picked.value;
+    }
+
+    const matched = options.items.filter((item) => item.label === picked.label);
+    if (matched.length === 1) {
+      return matched[0].value;
+    }
+    return undefined;
   }
 
   private createCfgItems(values: string[], currentValue: string): ActionItem[] {

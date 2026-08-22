@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { showQuickPickMock, showOpenDialogMock, showWarningMessageMock, updateSerialAgentSettingMock } = vi.hoisted(() => ({
+const { showQuickPickMock, showOpenDialogMock, showInputBoxMock, showWarningMessageMock, updateSerialAgentSettingMock } = vi.hoisted(() => ({
   showQuickPickMock: vi.fn(),
   showOpenDialogMock: vi.fn(),
+  showInputBoxMock: vi.fn(),
   showWarningMessageMock: vi.fn(),
   updateSerialAgentSettingMock: vi.fn(),
 }));
@@ -14,7 +15,7 @@ vi.mock('vscode', () => ({
     showWarningMessage: showWarningMessageMock,
     showErrorMessage: vi.fn(),
     showOpenDialog: showOpenDialogMock,
-    showInputBox: vi.fn(),
+    showInputBox: showInputBoxMock,
   },
 }));
 
@@ -35,6 +36,14 @@ function createSnapshot(): FirmwareConfigSnapshot {
       resultPolicy: 'log-and-artifact',
       strictExitCode: false,
       f7Action: 'buildAndFlash',
+    },
+    custom: {
+      mode: 'python',
+      pythonPath: 'python3',
+      script: 'tools/flash.py',
+      command: '',
+      preview: 'python3 tools/flash.py',
+      ready: true,
     },
     flash: {
       method: 'stlink',
@@ -87,6 +96,7 @@ describe('FirmwareConfigController flasher selection', () => {
   beforeEach(() => {
     showQuickPickMock.mockReset();
     showOpenDialogMock.mockReset();
+    showInputBoxMock.mockReset();
     showWarningMessageMock.mockReset();
     updateSerialAgentSettingMock.mockReset();
   });
@@ -111,6 +121,85 @@ describe('FirmwareConfigController flasher selection', () => {
     expect(updateSerialAgentSettingMock).toHaveBeenCalledWith('flash.method', 'openocd');
     expect(refreshState).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ nextRoute: 'openocd' });
+  });
+
+  it('saves custom.mode=command even when QuickPick strips the extra value field', async () => {
+    const refreshState = vi.fn(async () => undefined);
+    const controller = new FirmwareConfigController(createToolchain() as any, refreshState);
+
+    showQuickPickMock.mockImplementation(async (items: Array<{ label: string; value?: string }>) => {
+      const commandItem = items.find((item) => item.value === 'command');
+      if (!commandItem) {
+        return undefined;
+      }
+      return { label: commandItem.label };
+    });
+
+    await controller.handleAction('pickCustomMode');
+
+    expect(updateSerialAgentSettingMock).toHaveBeenCalledWith('custom.mode', 'command');
+    expect(refreshState).toHaveBeenCalledTimes(1);
+    expect(showQuickPickMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('opens the command editor after choosing Paste Command mode', async () => {
+    const refreshState = vi.fn(async () => undefined);
+    const controller = new FirmwareConfigController(createToolchain() as any, refreshState);
+
+    showQuickPickMock
+      .mockResolvedValueOnce({ value: 'command' })
+      .mockResolvedValueOnce({ value: '__paste__' });
+    showInputBoxMock.mockResolvedValue('uv run python tools/flash.py');
+
+    await controller.handleAction('pickCustomMode');
+
+    expect(updateSerialAgentSettingMock).toHaveBeenNthCalledWith(1, 'custom.mode', 'command');
+    expect(showQuickPickMock.mock.calls[1][0]).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'Paste command...', value: '__paste__' }),
+      expect.objectContaining({ label: 'Browse executable...', value: '__browse__' }),
+    ]));
+    expect(updateSerialAgentSettingMock).toHaveBeenNthCalledWith(2, 'custom.command', 'uv run python tools/flash.py');
+    expect(refreshState).toHaveBeenCalledTimes(2);
+  });
+
+  it('lets Edit Command paste a command line', async () => {
+    const refreshState = vi.fn(async () => undefined);
+    const controller = new FirmwareConfigController(createToolchain() as any, refreshState);
+
+    showQuickPickMock.mockResolvedValue({ value: '__paste__' });
+    showInputBoxMock.mockResolvedValue('echo hello');
+
+    await controller.handleAction('pickCustomCommand');
+
+    expect(showInputBoxMock).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Custom: Command',
+      value: '',
+    }));
+    expect(updateSerialAgentSettingMock).toHaveBeenCalledWith('custom.command', 'echo hello');
+  });
+
+  it('lets Edit Command browse an executable and prefill a quoted path', async () => {
+    const refreshState = vi.fn(async () => undefined);
+    const controller = new FirmwareConfigController(createToolchain() as any, refreshState);
+
+    showQuickPickMock.mockResolvedValue({ value: '__browse__' });
+    showOpenDialogMock.mockResolvedValue([{ fsPath: 'C:\\Program Files\\tools\\flash.exe' }]);
+    showInputBoxMock.mockImplementation(async (options: { value?: string }) => options.value);
+
+    await controller.handleAction('pickCustomCommand');
+
+    expect(showOpenDialogMock).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Custom: Executable',
+      canSelectFiles: true,
+      canSelectFolders: false,
+    }));
+    expect(showInputBoxMock).toHaveBeenCalledWith(expect.objectContaining({
+      value: '"C:\\Program Files\\tools\\flash.exe"',
+    }));
+    expect(updateSerialAgentSettingMock).toHaveBeenCalledWith(
+      'custom.command',
+      '"C:\\Program Files\\tools\\flash.exe"',
+    );
   });
 
   it('keeps the existing quick pick flow for Choose Flasher', async () => {

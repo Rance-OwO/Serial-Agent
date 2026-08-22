@@ -20,6 +20,7 @@
  *   - build_keil_project   触发 Keil 编译
  *   - flash_keil_firmware  触发当前配置的烧录器执行烧录
  *   - build_and_flash_keil 一键编译并烧录
+ *   - run_custom_command   运行用户配置的 Custom 命令
  *
  * 传输方式：stdio（标准输入输出）
  *
@@ -385,6 +386,13 @@ export function registerTools(
   'External side-effectful toolchain action. Runs Keil build and the configured firmware flasher in one call, updating local artifacts and target device firmware state.',
   {},
   async () => requester('POST', '/api/keil/build-and-flash'),
+  );
+
+  targetServer.tool(
+  'run_custom_command',
+  'External side-effectful toolchain action. Runs the user-configured Custom command from Serial Agent settings. Independent from Keil build/flash.',
+  {},
+  async () => requester('POST', '/api/custom/run'),
   );
 }
 

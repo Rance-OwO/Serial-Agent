@@ -14,6 +14,10 @@ describe('resolveKeilF7Command', () => {
     expect(resolveKeilF7Command('buildAndFlash')).toBe('serialagent.keil.buildAndFlash');
   });
 
+  it('maps custom to the custom command', () => {
+    expect(resolveKeilF7Command('custom')).toBe('serialagent.custom.run');
+  });
+
   it('throws for unsupported f7 actions', () => {
     expect(() => resolveKeilF7Command('invalid')).toThrowError('Invalid serialagent.keil.f7Action: invalid');
   });

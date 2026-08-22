@@ -29,10 +29,10 @@ function parseSchema(shape: Record<string, unknown>) {
 }
 
 describe('MCP tools registration and bridge mapping', () => {
-  it('should register all 13 tools', () => {
+  it('should register all 14 tools', () => {
     const server = new FakeMcpServer();
     registerTools(server as any, vi.fn() as any);
-    expect(server.tools.size).toBe(13);
+    expect(server.tools.size).toBe(14);
 
     expect([...server.tools.keys()].sort()).toEqual([
       'build_and_flash_keil',
@@ -45,6 +45,7 @@ describe('MCP tools registration and bridge mapping', () => {
       'get_serial_status',
       'list_serial_ports',
       'read_serial_log',
+      'run_custom_command',
       'send_and_wait',
       'send_serial_data',
       'wait_for_output',
@@ -144,11 +145,13 @@ describe('MCP tools registration and bridge mapping', () => {
     const buildRes = await getTool(server, 'build_keil_project').handler({});
     await getTool(server, 'flash_keil_firmware').handler({ artifactPath: 'D:/fw/app.hex' });
     await getTool(server, 'build_and_flash_keil').handler({});
+    await getTool(server, 'run_custom_command').handler({});
 
     expect(requester).toHaveBeenCalledWith('GET', '/api/keil/config-check');
     expect(requester).toHaveBeenCalledWith('POST', '/api/keil/build');
     expect(requester).toHaveBeenCalledWith('POST', '/api/keil/flash', { artifactPath: 'D:/fw/app.hex' });
     expect(requester).toHaveBeenCalledWith('POST', '/api/keil/build-and-flash');
+    expect(requester).toHaveBeenCalledWith('POST', '/api/custom/run');
 
     expect(buildRes.isError).toBe(true);
     expect(buildRes.content[0].text).toContain('KEIL_TASK_BUSY');

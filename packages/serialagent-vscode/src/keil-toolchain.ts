@@ -6,8 +6,14 @@ import { spawn, spawnSync } from 'child_process';
 import iconv from 'iconv-lite';
 import {
   describeConfigurationTarget,
+  getSerialAgentSetting,
   updateSerialAgentSetting,
 } from './config-target';
+import {
+  createFileSystemHost,
+  readCustomCommandConfig,
+  resolveCustomCommand,
+} from './custom-command';
 import { FirmwareConfigSnapshot } from './firmware-config-model';
 import { KeilConfigCheckResult, KeilTaskResult } from './types';
 
@@ -109,8 +115,9 @@ export class KeilToolchainService {
         armcc5Path: stripWrappedQuotes(this.getConfigValue<string>('keil.armcc5Path', '').trim()),
         resultPolicy: this.getConfigValue<string>('keil.resultPolicy', 'log-and-artifact').trim(),
         strictExitCode: this.getConfigValue<boolean>('keil.strictExitCode', false),
-        f7Action: this.getConfigValue<'build' | 'flash' | 'buildAndFlash'>('keil.f7Action', 'build'),
+        f7Action: this.getConfigValue<'build' | 'flash' | 'buildAndFlash' | 'custom'>('keil.f7Action', 'build'),
       },
+      custom: this.getCustomSnapshot(),
       flash: {
         method: this.resolveFlashMethod(),
         jlink: {
@@ -140,6 +147,24 @@ export class KeilToolchainService {
           sequence: this.getConfigValue<string>('openocd.sequence', 'helper').trim(),
         },
       },
+    };
+  }
+
+  private getCustomSnapshot(): FirmwareConfigSnapshot['custom'] {
+    const config = readCustomCommandConfig((key, defaultValue) => this.getConfigValue(key, defaultValue));
+    const resolved = resolveCustomCommand(config, createFileSystemHost({
+      workspaceRoot: this.getWorkspaceRootPath(),
+      isTrusted: vscode.workspace.isTrusted,
+    }));
+
+    return {
+      mode: config.mode,
+      pythonPath: config.pythonPath.trim(),
+      script: config.script.trim(),
+      command: config.command.trim(),
+      preview: resolved.resolution?.preview
+        || (config.mode === 'command' ? config.command.trim() : [config.pythonPath.trim(), config.script.trim()].filter(Boolean).join(' ')),
+      ready: resolved.ready,
     };
   }
 
@@ -686,7 +711,7 @@ export class KeilToolchainService {
   }
 
   private getConfigValue<T>(key: string, fallback: T): T {
-    return vscode.workspace.getConfiguration('serialagent').get<T>(key, fallback);
+    return getSerialAgentSetting(key, fallback);
   }
 
   private resolveUv4Path(): string {

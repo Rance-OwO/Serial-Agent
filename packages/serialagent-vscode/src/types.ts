@@ -117,6 +117,14 @@ export interface KeilTaskResult {
   target?: string;
 }
 
+/** Custom 命令执行结果 */
+export interface CustomCommandTaskResult {
+  success: boolean;
+  preview: string;
+  cwd: string;
+  exitCode: number;
+}
+
 /** BridgeServer 调用的 Keil API 抽象 */
 export interface IKeilApi {
   isBusy(): boolean;
@@ -124,4 +132,5 @@ export interface IKeilApi {
   build(): Promise<KeilTaskResult>;
   flash(artifactPath?: string): Promise<KeilTaskResult>;
   buildAndFlash(): Promise<KeilTaskResult>;
+  runCustomCommand(): Promise<CustomCommandTaskResult>;
 }

@@ -191,6 +191,7 @@ export class BridgeServer {
       else if (method === 'POST' && pathname === '/api/keil/flash') { await this._handleKeilFlash(req, res); }
       else if (method === 'POST' && pathname === '/api/keil/build-and-flash') { await this._handleKeilBuildAndFlash(res); }
       else if (method === 'POST' && pathname === '/api/keil/build-flash') { await this._handleKeilBuildAndFlash(res); } // alias
+      else if (method === 'POST' && pathname === '/api/custom/run') { await this._handleCustomRun(res); }
       else {
         this._jsonError(res, 404, 'NOT_FOUND', `Not found: ${method} ${pathname}`, {
           method,
@@ -771,6 +772,32 @@ export class BridgeServer {
     } catch (err: unknown) {
       const mapped = this._mapKeilError(err, 'KEIL_BUILD_FLASH_FAILED');
       this._jsonError(res, mapped.status, mapped.code, mapped.message, { stage: 'build-and-flash' });
+    }
+  }
+
+  private async _handleCustomRun(res: http.ServerResponse): Promise<void> {
+    const keilApi = this._ensureKeilApi(res);
+    if (!keilApi) { return; }
+    if (keilApi.isBusy()) {
+      this._jsonError(res, 409, 'KEIL_TASK_BUSY', 'Another Keil build/flash task is currently running', { stage: 'custom' });
+      return;
+    }
+
+    try {
+      const result = await keilApi.runCustomCommand();
+      this._json(res, 200, {
+        success: true,
+        data: {
+          stage: 'custom',
+          customOk: result.success,
+          preview: result.preview,
+          cwd: result.cwd,
+          exitCode: result.exitCode,
+        },
+      });
+    } catch (err: unknown) {
+      const mapped = this._mapKeilError(err, 'CUSTOM_COMMAND_FAILED');
+      this._jsonError(res, mapped.status, mapped.code, mapped.message, { stage: 'custom' });
     }
   }
 }

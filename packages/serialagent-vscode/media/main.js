@@ -17,23 +17,28 @@
   const MAX_HISTORY = 20;
   const MAX_RENDER_ENTRIES = 5000;
   const DEFAULT_NORMAL_SEND_HEIGHT = 38;
-  const DEFAULT_FOCUS_SEND_HEIGHT = 30;
 
   /**
-   * @typedef {{ id: string; label: string; value: string; hexSend?: boolean }} QuickCommand
+   * @typedef {'firmware' | 'connection' | 'monitor'} AccordionPanel
    */
 
   /**
    * @typedef {{ text: string; kind: 'text' | 'echo' }} LogEntry
    */
 
+  /**
+   * @typedef {{ id: string; label: string; value: string; hexSend?: boolean }} QuickCommand
+   */
+
   const statusDot = document.getElementById('status-dot');
   const statusText = document.getElementById('status-text');
+  const monitorPortChip = document.getElementById('monitor-port-chip');
+  const monitorBaudChip = document.getElementById('monitor-baud-chip');
   const rxCountEl = document.getElementById('rx-count');
   const txCountEl = document.getElementById('tx-count');
-  const focusModeBtn = document.getElementById('btn-focus-mode');
-  const logFocusModeBtn = document.getElementById('btn-log-focus-mode');
-  const focusConnectBtn = document.getElementById('btn-focus-connect');
+  const monitorConnectBtn = document.getElementById('btn-monitor-connect');
+  const accordionHeaders = Array.from(document.querySelectorAll('.accordion-header'));
+  const accordionPanels = Array.from(document.querySelectorAll('.accordion-panel'));
 
   /** @type {HTMLSelectElement | null} */
   const portSelect = /** @type {HTMLSelectElement} */ (document.getElementById('port-select'));
@@ -46,6 +51,8 @@
   /** @type {HTMLSelectElement | null} */
   const stopbitsSelect = /** @type {HTMLSelectElement} */ (document.getElementById('stopbits-select'));
   /** @type {HTMLSelectElement | null} */
+  const flowControlSelect = /** @type {HTMLSelectElement} */ (document.getElementById('flow-control-select'));
+  /** @type {HTMLSelectElement | null} */
   const lineEndingSelect = /** @type {HTMLSelectElement} */ (document.getElementById('line-ending-select'));
 
   const refreshBtn = document.getElementById('btn-refresh');
@@ -54,6 +61,7 @@
   const keilBuildBtn = document.getElementById('btn-keil-build');
   const keilFlashBtn = document.getElementById('btn-keil-flash');
   const keilBuildFlashBtn = document.getElementById('btn-keil-build-flash');
+  const customRunBtn = document.getElementById('btn-custom-run');
   const keilConfigInlineBtn = document.getElementById('btn-keil-config-inline');
   const keilCheckBtn = document.getElementById('btn-keil-check');
   const keilSettingsBtn = document.getElementById('btn-keil-settings');
@@ -61,6 +69,7 @@
   const firmwareSummaryStatusEl = document.getElementById('firmware-summary-status');
   const firmwareSummaryBuildEl = document.getElementById('firmware-summary-build');
   const firmwareSummaryFlashEl = document.getElementById('firmware-summary-flash');
+  const firmwareSummaryCustomEl = document.getElementById('firmware-summary-custom');
   const firmwareSummaryHintEl = document.getElementById('firmware-summary-hint');
   const firmwareSummaryWarningsEl = document.getElementById('firmware-summary-warnings');
   const firmwareConfigDrawer = document.getElementById('firmware-config-drawer');
@@ -121,9 +130,9 @@
   let frozenLog = false;
   let logEntries = /** @type {LogEntry[]} */ ([]);
   let activeLogFilter = '';
-  let focusMode = false;
+  /** @type {AccordionPanel | null} */
+  let activePanel = 'monitor';
   let normalSendHeight;
-  let focusSendHeight;
   let firmwareDrawerOpen = false;
   let firmwareDrawerRoute = 'home';
   let firmwareDrawerStack = ['home'];
@@ -133,6 +142,7 @@
   restoreWebviewState();
 
   bindSerialActions();
+  bindAccordionActions();
   bindFirmwareDrawerActions();
   bindLogActions();
   bindSendActions();
@@ -181,12 +191,7 @@
     });
 
     connectBtn?.addEventListener('click', handleConnectionToggle);
-    focusConnectBtn?.addEventListener('click', handleConnectionToggle);
-    [focusModeBtn, logFocusModeBtn].forEach((button) => {
-      button?.addEventListener('click', () => {
-        vscode.postMessage({ type: 'toggleFocusMode', focusMode: !focusMode });
-      });
-    });
+    monitorConnectBtn?.addEventListener('click', handleConnectionToggle);
 
     keilBuildBtn?.addEventListener('click', () => {
       vscode.postMessage({ type: 'keilBuild' });
@@ -196,6 +201,14 @@
     });
     keilBuildFlashBtn?.addEventListener('click', () => {
       vscode.postMessage({ type: 'keilBuildFlash' });
+    });
+    customRunBtn?.addEventListener('click', () => {
+      const custom = firmwareConfigSnapshot?.custom || {};
+      if (!custom.ready) {
+        openFirmwareDrawer('custom');
+        return;
+      }
+      vscode.postMessage({ type: 'customRun' });
     });
     keilConfigInlineBtn?.addEventListener('click', () => {
       openFirmwareDrawer('home');
@@ -223,10 +236,126 @@
       databitsSelect,
       paritySelect,
       stopbitsSelect,
-      lineEndingSelect,
+      flowControlSelect,
     ].forEach((element) => {
-      element?.addEventListener('change', persistCurrentConfigDraft);
+      element?.addEventListener('change', () => {
+        persistCurrentConfigDraft();
+        updateMonitorConfigChips();
+      });
     });
+  }
+
+  function bindAccordionActions() {
+    accordionHeaders.forEach((header) => {
+      header.addEventListener('click', () => {
+        const panelId = header.getAttribute('data-accordion');
+        if (panelId === 'firmware' || panelId === 'connection' || panelId === 'monitor') {
+          toggleAccordionPanel(panelId);
+        }
+      });
+      header.addEventListener('keydown', (event) => {
+        const panelId = header.getAttribute('data-accordion');
+        if (panelId !== 'firmware' && panelId !== 'connection' && panelId !== 'monitor') {
+          return;
+        }
+
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          header.click();
+          return;
+        }
+
+        if (event.key === 'ArrowRight' && activePanel !== panelId) {
+          event.preventDefault();
+          setActivePanel(panelId, { persist: true });
+          return;
+        }
+
+        if (event.key === 'ArrowLeft' && activePanel === panelId) {
+          event.preventDefault();
+          setActivePanel(null, { persist: true });
+        }
+      });
+    });
+  }
+
+  function toggleAccordionPanel(panel) {
+    const nextPanel = activePanel === panel ? null : panel;
+    setActivePanel(nextPanel, { persist: true });
+  }
+
+  /**
+   * @param {AccordionPanel | null} panel
+   * @param {{ persist?: boolean }} [options]
+   */
+  function setActivePanel(panel, options) {
+    const shouldCloseDrawer = panel !== 'firmware' && firmwareDrawerOpen;
+    if (shouldCloseDrawer) {
+      firmwareDrawerOpen = false;
+      firmwareDrawerRoute = 'home';
+      firmwareDrawerStack = ['home'];
+      renderFirmwareDrawer();
+    }
+
+    activePanel = panel;
+    renderAccordionPanels();
+
+    if (options?.persist !== false) {
+      if (shouldCloseDrawer) {
+        vscode.postMessage({
+          type: 'savePanelUiState',
+          activePanel: panel,
+          firmwareDrawerOpen: false,
+          firmwareDrawerRoute: 'home',
+          firmwareDrawerStack: ['home'],
+        });
+      } else {
+        vscode.postMessage({ type: 'savePanelUiState', activePanel: panel });
+      }
+    }
+  }
+
+  function renderAccordionPanels() {
+    accordionPanels.forEach((section) => {
+      const panel = section.getAttribute('data-panel');
+      const expanded = panel === activePanel;
+      section.classList.toggle('is-expanded', expanded);
+
+      const header = section.querySelector('.accordion-header');
+      const body = section.querySelector('.accordion-body');
+      const chevron = section.querySelector('.accordion-chevron');
+
+      if (header) {
+        header.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+      }
+      body?.classList.toggle('hidden', !expanded);
+      if (chevron) {
+        chevron.classList.toggle('is-expanded', expanded);
+      }
+    });
+  }
+
+  function updateMonitorConfigChips() {
+    if (connected) {
+      monitorPortChip?.classList.add('hidden');
+      monitorBaudChip?.classList.add('hidden');
+      return;
+    }
+
+    const port = portSelect?.value || '';
+    const baud = baudrateInput?.value || '115200';
+    if (monitorPortChip) {
+      if (port) {
+        monitorPortChip.textContent = port;
+        monitorPortChip.classList.remove('hidden');
+      } else {
+        monitorPortChip.classList.add('hidden');
+      }
+    }
+    if (monitorBaudChip) {
+      monitorBaudChip.textContent = `${baud} baud`;
+      monitorBaudChip.classList.toggle('hidden', !port);
+    }
   }
 
   function bindFirmwareDrawerActions() {
@@ -466,11 +595,11 @@
   }
 
   function getActiveSendHeight() {
-    return focusMode ? focusSendHeight : normalSendHeight;
+    return normalSendHeight;
   }
 
   function getDefaultSendHeight() {
-    return focusMode ? DEFAULT_FOCUS_SEND_HEIGHT : DEFAULT_NORMAL_SEND_HEIGHT;
+    return DEFAULT_NORMAL_SEND_HEIGHT;
   }
 
   function applyCurrentLayout() {
@@ -493,14 +622,8 @@
     }
 
     const nextHeight = Math.max(10, Math.min(90, (sendSection.offsetHeight / wrapperHeight) * 100));
-    if (focusMode) {
-      focusSendHeight = nextHeight;
-      vscode.postMessage({ type: 'saveFocusLayout', focusSendHeight: nextHeight });
-      return;
-    }
-
     normalSendHeight = nextHeight;
-    vscode.postMessage({ type: 'saveFocusLayout', normalSendHeight: nextHeight });
+    vscode.postMessage({ type: 'savePanelLayout', normalSendHeight: nextHeight });
   }
 
   function updateConnectionButtons() {
@@ -509,34 +632,24 @@
       connectBtn.className = connected ? 'btn-danger' : 'btn-primary';
     }
 
-    if (focusConnectBtn) {
-      focusConnectBtn.textContent = connected ? 'Close' : 'Open';
-      focusConnectBtn.classList.toggle('status-action-primary', !connected);
-      focusConnectBtn.classList.toggle('status-action-danger', connected);
+    if (monitorConnectBtn) {
+      monitorConnectBtn.textContent = connected ? 'Close' : 'Open';
+      monitorConnectBtn.classList.toggle('status-action-primary', !connected);
+      monitorConnectBtn.classList.toggle('status-action-danger', connected);
     }
-  }
 
-  function updateFocusButton() {
-    [focusModeBtn, logFocusModeBtn].forEach((button) => {
-      if (!button) {
-        return;
-      }
-
-      button.textContent = focusMode ? 'Exit Focus' : 'Focus';
-      button.title = focusMode ? 'Exit focus mode' : 'Enter focus mode';
-      button.classList.toggle('is-active', focusMode);
-    });
+    updateMonitorConfigChips();
   }
 
   function applyUiState(uiState) {
-    focusMode = !!uiState?.focusMode;
+    activePanel = normalizeActivePanel(uiState?.activePanel);
     normalSendHeight = typeof uiState?.normalSendHeight === 'number'
       ? uiState.normalSendHeight
       : normalSendHeight;
-    focusSendHeight = typeof uiState?.focusSendHeight === 'number'
-      ? uiState.focusSendHeight
-      : focusSendHeight;
-    firmwareDrawerOpen = !!uiState?.firmwareDrawerOpen && !focusMode;
+    firmwareDrawerOpen = !!uiState?.firmwareDrawerOpen;
+    if (firmwareDrawerOpen && activePanel !== 'firmware') {
+      firmwareDrawerOpen = false;
+    }
     firmwareDrawerRoute = normalizeFirmwareDrawerRoute(uiState?.firmwareDrawerRoute);
     firmwareDrawerStack = normalizeFirmwareDrawerStack(
       uiState?.firmwareDrawerStack,
@@ -544,14 +657,24 @@
       firmwareDrawerOpen,
     );
 
-    document.body.classList.toggle('focus-mode', focusMode);
-    if (focusConnectBtn) {
-      focusConnectBtn.hidden = !focusMode;
-    }
-    updateFocusButton();
+    renderAccordionPanels();
     updateConnectionButtons();
     applyCurrentLayout();
     renderFirmwareDrawer();
+  }
+
+  /**
+   * @param {unknown} panel
+   * @returns {AccordionPanel | null}
+   */
+  function normalizeActivePanel(panel) {
+    if (panel === 'firmware' || panel === 'connection' || panel === 'monitor') {
+      return panel;
+    }
+    if (panel === null || panel === 'none' || panel === '') {
+      return null;
+    }
+    return 'monitor';
   }
 
   function normalizeFirmwareDrawerRoute(route) {
@@ -561,6 +684,7 @@
       case 'jlink':
       case 'stlink':
       case 'openocd':
+      case 'custom':
         return route;
       case 'home':
       default:
@@ -609,6 +733,8 @@
         return 'ST-Link';
       case 'openocd':
         return 'OpenOCD';
+      case 'custom':
+        return 'Custom Command';
       case 'home':
       default:
         return 'Home';
@@ -625,7 +751,7 @@
   }
 
   function renderFirmwareDrawer() {
-    const open = firmwareDrawerOpen && !focusMode;
+    const open = firmwareDrawerOpen;
     document.body.classList.toggle('firmware-config-open', open);
     firmwareConfigDrawer?.classList.toggle('hidden', !open);
 
@@ -658,9 +784,24 @@
     });
   }
 
+  function updateSendControlsDisabled() {
+    const blocked = !connected || keilBusy;
+    if (sendInput) {
+      sendInput.disabled = blocked;
+    }
+    if (sendBtn) {
+      sendBtn.disabled = blocked;
+    }
+    quickCommandList?.querySelectorAll('.quick-command-chip').forEach((button) => {
+      if (button instanceof HTMLButtonElement) {
+        button.disabled = blocked;
+      }
+    });
+  }
+
   function setFirmwareDrawerState(nextOpen, nextRoute, nextStack, options) {
     const route = normalizeFirmwareDrawerRoute(nextRoute);
-    const open = !!nextOpen && !focusMode;
+    const open = !!nextOpen;
     firmwareDrawerOpen = open;
     firmwareDrawerRoute = open ? route : 'home';
     firmwareDrawerStack = normalizeFirmwareDrawerStack(
@@ -678,6 +819,7 @@
   }
 
   function openFirmwareDrawer(route) {
+    setActivePanel('firmware', { persist: true });
     const targetRoute = normalizeFirmwareDrawerRoute(route);
     const nextStack = targetRoute === 'home' ? ['home'] : ['home', targetRoute];
     setFirmwareDrawerState(true, targetRoute, nextStack, { persist: true });
@@ -768,8 +910,28 @@
       'fw-flash-f7',
       keil.f7Action === 'buildAndFlash'
         ? 'Build+Flash'
-        : (keil.f7Action === 'flash' ? 'Flash' : 'Build'),
+        : (keil.f7Action === 'custom' ? 'Custom' : (keil.f7Action === 'flash' ? 'Flash' : 'Build')),
     );
+
+    const custom = firmwareConfigSnapshot.custom || {};
+    const customMode = custom.mode === 'command' ? 'command' : 'python';
+    setFirmwareValue('fw-custom-mode', customMode === 'command' ? 'Command' : 'Python Script');
+    setFirmwareValue('fw-custom-python', formatFirmwarePath(custom.pythonPath, 'Choose python.exe from a uv venv, venv, or system Python'));
+    setFirmwareValue('fw-custom-script', formatFirmwarePath(custom.script, 'Choose a .py script'));
+    setFirmwareValue('fw-custom-command', custom.command || 'Paste a command line, or choose an executable');
+    setFirmwareValue('fw-custom-preview', custom.preview || (customMode === 'command' ? 'Enter a command or choose an executable to preview it' : 'Choose Python and a script to preview the command'));
+    document.querySelectorAll('.custom-python-only').forEach((element) => {
+      element.classList.toggle('hidden', customMode !== 'python');
+    });
+    document.querySelectorAll('.custom-command-only').forEach((element) => {
+      element.classList.toggle('hidden', customMode !== 'command');
+    });
+    if (customRunBtn) {
+      customRunBtn.disabled = keilBusy;
+      customRunBtn.title = custom.ready
+        ? (custom.preview || 'Run custom command')
+        : 'Configure Custom Command first';
+    }
     setFirmwareValue('fw-flash-method', getFirmwareMethodLabel(flash.method));
 
     setFirmwareValue('fw-jlink-install', formatFirmwarePath(jlink.installDirectory, 'Choose JLink install directory'));
@@ -811,6 +973,7 @@
       dataBits: parseInt(databitsSelect?.value || '8', 10),
       parity: paritySelect?.value || 'none',
       stopBits: parseFloat(stopbitsSelect?.value || '1'),
+      flowControl: flowControlSelect?.value || 'none',
       lineEnding: lineEndingSelect?.value || 'none',
       showTimestamp: !!optTimestamp?.checked,
       hexMode: !!optHex?.checked,
@@ -818,7 +981,7 @@
   }
 
   /**
-   * @param {{ port: string; baudRate: number; dataBits: number; parity: string; stopBits: number; lineEnding: string; showTimestamp: boolean; hexMode: boolean }} config
+   * @param {{ port: string; baudRate: number; dataBits: number; parity: string; stopBits: number; flowControl?: string; lineEnding: string; showTimestamp: boolean; hexMode: boolean }} config
    */
   function applyConfigToInputs(config) {
     if (portSelect) { portSelect.value = config.port || ''; }
@@ -826,9 +989,11 @@
     if (databitsSelect) { databitsSelect.value = String(config.dataBits || 8); }
     if (paritySelect) { paritySelect.value = config.parity || 'none'; }
     if (stopbitsSelect) { stopbitsSelect.value = String(config.stopBits || 1); }
+    if (flowControlSelect) { flowControlSelect.value = config.flowControl || 'none'; }
     if (lineEndingSelect) { lineEndingSelect.value = config.lineEnding || 'none'; }
     if (optTimestamp) { optTimestamp.checked = !!config.showTimestamp; }
     if (optHex) { optHex.checked = !!config.hexMode; }
+    updateMonitorConfigChips();
   }
 
   function persistCurrentConfigDraft() {
@@ -864,8 +1029,10 @@
       button.addEventListener('click', () => {
         sendData(command.value, !!command.hexSend);
       });
+      button.disabled = !connected || keilBusy;
       quickCommandList.appendChild(button);
     });
+    updateSendControlsDisabled();
   }
 
   function renderQuickCommandManager() {
@@ -1121,6 +1288,9 @@
     if (firmwareSummaryFlashEl) {
       firmwareSummaryFlashEl.textContent = summary.flashText || 'Flash: waiting for summary...';
     }
+    if (firmwareSummaryCustomEl) {
+      firmwareSummaryCustomEl.textContent = summary.customText || 'Custom: waiting for summary...';
+    }
     if (firmwareSummaryHintEl) {
       firmwareSummaryHintEl.textContent = summary.hintText || 'Use Configure to start the guided setup.';
     }
@@ -1210,11 +1380,12 @@
         }
         updateConnectionButtons();
 
-        [portSelect, baudrateInput, databitsSelect, paritySelect, stopbitsSelect].forEach((element) => {
+        [portSelect, baudrateInput, databitsSelect, paritySelect, stopbitsSelect, flowControlSelect].forEach((element) => {
           if (element) { element.disabled = connected; }
         });
-        if (sendInput) { sendInput.disabled = !connected; }
-        if (sendBtn) { sendBtn.disabled = !connected; }
+        if (sendInput) { sendInput.disabled = !connected || keilBusy; }
+        if (sendBtn) { sendBtn.disabled = !connected || keilBusy; }
+        updateSendControlsDisabled();
         updateEmptyState();
         break;
       }
@@ -1280,10 +1451,11 @@
       case 'keilBusy': {
         const busy = !!message.busy;
         keilBusy = busy;
-        [keilBuildBtn, keilFlashBtn, keilBuildFlashBtn, keilCpuBtn, keilConfigBtn, keilConfigInlineBtn, keilCheckBtn, keilSettingsBtn].forEach((element) => {
+        [keilBuildBtn, keilFlashBtn, keilBuildFlashBtn, customRunBtn, keilConfigInlineBtn, keilCheckBtn, keilSettingsBtn].forEach((element) => {
           if (element) { element.disabled = busy; }
         });
         updateFirmwareActionButtons();
+        updateSendControlsDisabled();
         if (keilStatusEl) {
           const taskName = message.task || 'Task';
           keilStatusEl.textContent = busy ? `Keil: Running ${taskName}...` : 'Keil: Idle';
@@ -1306,7 +1478,7 @@
   renderQuickCommands();
   updateHistorySelect();
   updateConnectionButtons();
-  applyUiState({});
+  renderAccordionPanels();
   renderFirmwareDrawer();
   updateFreezeButton();
   updateEmptyState();

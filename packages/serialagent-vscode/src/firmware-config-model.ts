@@ -2,8 +2,25 @@ import * as path from 'path';
 import { KeilConfigCheckResult } from './types';
 
 export type FirmwareFlashMethod = 'jlink' | 'stlink' | 'openocd';
-export type FirmwareF7Action = 'build' | 'flash' | 'buildAndFlash';
-export type FirmwareConfigRoute = 'home' | 'build' | 'flash' | 'jlink' | 'stlink' | 'openocd';
+export type FirmwareF7Action = 'build' | 'flash' | 'buildAndFlash' | 'custom';
+export type FirmwareConfigRoute = 'home' | 'build' | 'flash' | 'jlink' | 'stlink' | 'openocd' | 'custom';
+
+export const FIRMWARE_CONFIG_ROUTES: FirmwareConfigRoute[] = [
+  'home',
+  'build',
+  'flash',
+  'jlink',
+  'stlink',
+  'openocd',
+  'custom',
+];
+
+export function normalizeFirmwareConfigRoute(route: unknown): FirmwareConfigRoute {
+  return FIRMWARE_CONFIG_ROUTES.includes(route as FirmwareConfigRoute)
+    ? route as FirmwareConfigRoute
+    : 'home';
+}
+
 export type FirmwareConfigAction =
   | 'pickUv4Path'
   | 'pickArmcc5Path'
@@ -31,6 +48,10 @@ export type FirmwareConfigAction =
   | 'pickOpenOcdBaseAddr'
   | 'pickOpenOcdRunAfterProgram'
   | 'pickOpenOcdSequence'
+  | 'pickCustomMode'
+  | 'pickCustomPython'
+  | 'pickCustomScript'
+  | 'pickCustomCommand'
   | 'runConfigCheck'
   | 'openAdvancedSettings';
 
@@ -43,6 +64,14 @@ export interface FirmwareConfigSnapshot {
     resultPolicy: string;
     strictExitCode: boolean;
     f7Action: FirmwareF7Action;
+  };
+  custom: {
+    mode: 'python' | 'command';
+    pythonPath: string;
+    script: string;
+    command: string;
+    preview: string;
+    ready: boolean;
   };
   flash: {
     method: FirmwareFlashMethod;
@@ -81,6 +110,7 @@ export interface FirmwareConfigSummary {
   statusText: string;
   buildText: string;
   flashText: string;
+  customText: string;
   hintText: string;
   warnings: string[];
 }
@@ -105,6 +135,10 @@ const CHECK_LABELS: Record<string, string> = {
   'openocd.target': 'Select Chip Config',
   'openocd.baseAddr': 'Check the OpenOCD base address',
   'openocd.scriptsDir': 'Check the OpenOCD scripts directory',
+  'custom.pythonPath': 'Choose a Python interpreter',
+  'custom.script': 'Choose a Python script',
+  'custom.command': 'Enter a custom command',
+  'custom.workspaceTrust': 'Trust this workspace to run a custom command',
 };
 
 function getF7ActionLabel(action: FirmwareF7Action): string {
@@ -113,6 +147,8 @@ function getF7ActionLabel(action: FirmwareF7Action): string {
       return 'Build+Flash';
     case 'flash':
       return 'Flash';
+    case 'custom':
+      return 'Custom';
     default:
       return 'Build';
   }
@@ -171,6 +207,19 @@ function buildBuildText(snapshot: FirmwareConfigSnapshot, report: KeilConfigChec
   return parts.join(' | ');
 }
 
+function buildCustomText(snapshot: FirmwareConfigSnapshot): string {
+  if (snapshot.custom.preview) {
+    return snapshot.custom.preview;
+  }
+  if (snapshot.custom.mode === 'command') {
+    return snapshot.custom.command || 'not configured';
+  }
+  if (snapshot.custom.pythonPath || snapshot.custom.script) {
+    return [snapshot.custom.pythonPath, snapshot.custom.script].filter(Boolean).join(' ');
+  }
+  return 'not configured';
+}
+
 function buildFlashText(snapshot: FirmwareConfigSnapshot): string {
   const parts = [
     `F7: ${getF7ActionLabel(snapshot.keil.f7Action)}`,
@@ -206,6 +255,7 @@ export function buildFirmwareConfigSummary(
       : `${failedChecks.length} item(s) need attention`,
     buildText: buildBuildText(snapshot, report),
     flashText: buildFlashText(snapshot),
+    customText: `Custom: ${buildCustomText(snapshot)}`,
     hintText: report.ready
       ? 'Use Configure to adjust Build or Flash options without leaving the panel.'
       : 'Open Configure, fill the missing items, then use Close and Return to Serial whenever you want to go back.',

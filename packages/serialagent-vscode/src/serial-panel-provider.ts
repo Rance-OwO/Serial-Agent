@@ -4,6 +4,7 @@ import {
   FirmwareConfigAction,
   FirmwareConfigRoute,
   FirmwareConfigSnapshot,
+  normalizeFirmwareConfigRoute,
   FirmwareConfigSummary,
 } from './firmware-config-model';
 import type { SerialRuntime } from './serial-manager';
@@ -33,10 +34,11 @@ interface QuickCommand {
   hexSend?: boolean;
 }
 
+export type AccordionPanel = 'firmware' | 'connection' | 'monitor';
+
 interface SerialPanelUiState {
-  focusMode: boolean;
+  activePanel: AccordionPanel | null;
   normalSendHeight?: number;
-  focusSendHeight?: number;
   firmwareDrawerOpen?: boolean;
   firmwareDrawerRoute?: FirmwareConfigRoute;
   firmwareDrawerStack?: FirmwareConfigRoute[];
@@ -165,12 +167,6 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider, vscode.D
     this._panel = undefined;
   }
 
-  public toggleFocusMode(force?: boolean): void {
-    const current = this._loadPanelUiState();
-    const focusMode = force ?? !current.focusMode;
-    this._persistPanelUiState({ focusMode });
-  }
-
   public setFirmwareConfigState(snapshot: FirmwareConfigSnapshot, summary: FirmwareConfigSummary): void {
     this._firmwareConfigSnapshot = snapshot;
     this._firmwareConfigSummary = summary;
@@ -213,7 +209,7 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider, vscode.D
 
   private _loadPanelUiState(): SerialPanelUiState {
     return this._normalizePanelUiState(this._context.globalState.get<SerialPanelUiState>('serialPanelUiState', {
-      focusMode: false,
+      activePanel: 'monitor',
       firmwareDrawerOpen: false,
       firmwareDrawerRoute: 'home',
       firmwareDrawerStack: ['home'],
@@ -229,34 +225,40 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider, vscode.D
     this.postMessage({ type: 'updateUiState', uiState: nextState });
   }
 
-  private _normalizePanelUiState(state: Partial<SerialPanelUiState>): SerialPanelUiState {
-    const focusMode = !!state.focusMode;
+  private _normalizePanelUiState(state: Partial<SerialPanelUiState> & { focusMode?: boolean }): SerialPanelUiState {
+    const activePanel = this._normalizeActivePanel(state.activePanel, state.focusMode);
     const route = this._normalizeFirmwareDrawerRoute(state.firmwareDrawerRoute);
     const stack = this._normalizeFirmwareDrawerStack(state.firmwareDrawerStack, route);
-    const firmwareDrawerOpen = focusMode ? false : !!state.firmwareDrawerOpen;
+    const firmwareDrawerOpen = !!state.firmwareDrawerOpen
+      && activePanel === 'firmware';
 
     return {
-      focusMode,
+      activePanel,
       normalSendHeight: typeof state.normalSendHeight === 'number' ? state.normalSendHeight : undefined,
-      focusSendHeight: typeof state.focusSendHeight === 'number' ? state.focusSendHeight : undefined,
       firmwareDrawerOpen,
       firmwareDrawerRoute: firmwareDrawerOpen ? stack[stack.length - 1] : 'home',
       firmwareDrawerStack: firmwareDrawerOpen ? stack : ['home'],
     };
   }
 
-  private _normalizeFirmwareDrawerRoute(route: unknown): FirmwareConfigRoute {
-    switch (route) {
-      case 'build':
-      case 'flash':
-      case 'jlink':
-      case 'stlink':
-      case 'openocd':
-        return route;
-      case 'home':
-      default:
-        return 'home';
+  private _normalizeActivePanel(
+    activePanel: unknown,
+    legacyFocusMode?: boolean,
+  ): AccordionPanel | null {
+    if (activePanel === 'firmware' || activePanel === 'connection' || activePanel === 'monitor') {
+      return activePanel;
     }
+    if (activePanel === null || activePanel === 'none' || activePanel === '') {
+      return null;
+    }
+    if (legacyFocusMode === true) {
+      return 'monitor';
+    }
+    return 'monitor';
+  }
+
+  private _normalizeFirmwareDrawerRoute(route: unknown): FirmwareConfigRoute {
+    return normalizeFirmwareConfigRoute(route);
   }
 
   private _normalizeFirmwareDrawerStack(
@@ -369,18 +371,20 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider, vscode.D
         }
 
         case 'connect': {
-          const { port, baudRate, dataBits, parity, stopBits } = data;
+          const { port, baudRate, dataBits, parity, stopBits, flowControl } = data;
           if (!port) {
             vscode.window.showWarningMessage('[Serial Agent] Please select a serial port first');
             return;
           }
           const currentCfg = this._serialManager.config;
+          const normalizedFlowControl = this._normalizeFlowControl(flowControl ?? currentCfg.flowControl);
           const config: SerialConfig = {
             port,
             baudRate: baudRate ?? 115200,
             dataBits: dataBits ?? 8,
             parity: parity ?? 'none',
             stopBits: stopBits ?? 1,
+            flowControl: normalizedFlowControl,
             lineEnding: currentCfg.lineEnding,
             showTimestamp: currentCfg.showTimestamp,
             hexMode: currentCfg.hexMode,
@@ -414,6 +418,7 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider, vscode.D
           if (data.showTimestamp !== undefined) { partial.showTimestamp = data.showTimestamp; }
           if (data.hexMode !== undefined) { partial.hexMode = data.hexMode; }
           if (data.lineEnding !== undefined) { partial.lineEnding = data.lineEnding; }
+          if (data.flowControl !== undefined) { partial.flowControl = this._normalizeFlowControl(data.flowControl); }
           this._serialManager.updateSettings(partial);
           this._saveConfig(partial);
           break;
@@ -444,37 +449,17 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider, vscode.D
           break;
         }
 
-        case 'toggleFocusMode': {
-          const focusMode = typeof data.focusMode === 'boolean'
-            ? data.focusMode
-            : !this._loadPanelUiState().focusMode;
-          this._persistPanelUiState({
-            focusMode,
-            firmwareDrawerOpen: focusMode ? false : undefined,
-            firmwareDrawerRoute: focusMode ? 'home' : undefined,
-            firmwareDrawerStack: focusMode ? ['home'] : undefined,
-          });
-          break;
-        }
-
-        case 'saveFocusLayout': {
-          const partial: Partial<SerialPanelUiState> = {};
+        case 'savePanelLayout': {
           if (typeof data.normalSendHeight === 'number') {
-            partial.normalSendHeight = data.normalSendHeight;
-          }
-          if (typeof data.focusSendHeight === 'number') {
-            partial.focusSendHeight = data.focusSendHeight;
-          }
-          if (Object.keys(partial).length > 0) {
-            this._persistPanelUiState(partial);
+            this._persistPanelUiState({ normalSendHeight: data.normalSendHeight });
           }
           break;
         }
 
         case 'savePanelUiState': {
           const partial: Partial<SerialPanelUiState> = {};
-          if (typeof data.focusMode === 'boolean') {
-            partial.focusMode = data.focusMode;
+          if (data.activePanel !== undefined) {
+            partial.activePanel = this._normalizeActivePanel(data.activePanel);
           }
           if (typeof data.firmwareDrawerOpen === 'boolean') {
             partial.firmwareDrawerOpen = data.firmwareDrawerOpen;
@@ -509,8 +494,14 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider, vscode.D
           break;
         }
 
+        case 'customRun': {
+          await vscode.commands.executeCommand('serialagent.custom.run');
+          break;
+        }
+
         case 'keilOpenConfig': {
           this._persistPanelUiState({
+            activePanel: 'firmware',
             firmwareDrawerOpen: true,
             firmwareDrawerRoute: 'home',
             firmwareDrawerStack: ['home'],
@@ -546,11 +537,29 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider, vscode.D
     });
   }
 
+  private _normalizeFlowControl(value: unknown): SerialConfig['flowControl'] {
+    switch (value) {
+      case 'rtscts':
+      case 'xon':
+      case 'xoff':
+      case 'none':
+        return value;
+      default:
+        return 'none';
+    }
+  }
+
   private _getHtmlForWebview(webview: vscode.Webview): string {
     const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._context.extensionUri, 'media', 'main.js'));
     const styleResetUri = webview.asWebviewUri(vscode.Uri.joinPath(this._context.extensionUri, 'media', 'reset.css'));
     const styleVSCodeUri = webview.asWebviewUri(vscode.Uri.joinPath(this._context.extensionUri, 'media', 'vscode.css'));
     const styleMainUri = webview.asWebviewUri(vscode.Uri.joinPath(this._context.extensionUri, 'media', 'main.css'));
+    const styleCodiconsUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(
+        this._context.extensionUri,
+        'node_modules', '@vscode', 'codicons', 'dist', 'codicon.css',
+      ),
+    );
 
     const nonce = getNonce();
     const baudrateOptions = DEFAULT_BAUDRATES.map((baudrate) => `<option value="${baudrate}">`).join('');
@@ -560,96 +569,26 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider, vscode.D
 <head>
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
+    content="default-src 'none'; style-src ${webview.cspSource}; font-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link href="${styleResetUri}" rel="stylesheet">
   <link href="${styleVSCodeUri}" rel="stylesheet">
   <link href="${styleMainUri}" rel="stylesheet">
+  <link href="${styleCodiconsUri}" rel="stylesheet">
   <title>Serial Agent Monitor</title>
 </head>
 <body>
-  <div class="status-bar">
-    <span id="status-dot" class="status-indicator status-disconnected"></span>
-    <span id="status-text">Disconnected</span>
-    <span class="spacer"></span>
-    <span id="rx-count" class="counter" title="Received bytes">RX: 0</span>
-    <span id="tx-count" class="counter" title="Sent bytes">TX: 0</span>
-    <div class="status-actions">
-      <button id="btn-focus-mode" class="status-action-btn" type="button" title="Toggle focus mode">Focus</button>
-      <button id="btn-focus-connect" class="status-action-btn" type="button" title="Toggle serial connection" hidden>Open</button>
-    </div>
-  </div>
-
-  <div id="serial-config-section" class="section-block section-block-serial">
-    <div class="section-heading">
-      <span class="section-title">COM Port Config</span>
-    </div>
-
-    <div class="config-section">
-    <div class="config-row">
-      <label>Port</label>
-      <div class="config-control">
-        <select id="port-select"><option value="">-- Refresh --</option></select>
-        <button id="btn-refresh" class="icon-btn" title="Refresh Ports">&#x21bb;</button>
-      </div>
-    </div>
-    <div class="config-row">
-      <label>Baud</label>
-      <div class="config-control">
-        <input id="baudrate-input" type="number" list="baudrate-list" value="115200" min="1" />
-        <datalist id="baudrate-list">${baudrateOptions}</datalist>
-      </div>
-    </div>
-    <div class="config-row">
-      <label>End</label>
-      <div class="config-control">
-        <select id="line-ending-select" title="Line ending for send">
-          <option value="none" selected>None</option>
-          <option value="lf">LF (\\n)</option>
-          <option value="crlf">CRLF (\\r\\n)</option>
-          <option value="cr">CR (\\r)</option>
-        </select>
-      </div>
-    </div>
-    <details id="advanced-config">
-      <summary>Advanced</summary>
-      <div class="config-row">
-        <label>Data</label>
-        <select id="databits-select">
-          <option value="5">5</option><option value="6">6</option>
-          <option value="7">7</option><option value="8" selected>8</option>
-        </select>
-      </div>
-      <div class="config-row">
-        <label>Parity</label>
-        <select id="parity-select">
-          <option value="none" selected>None</option><option value="even">Even</option>
-          <option value="odd">Odd</option><option value="mark">Mark</option>
-          <option value="space">Space</option>
-        </select>
-      </div>
-      <div class="config-row">
-        <label>Stop</label>
-        <select id="stopbits-select">
-          <option value="1" selected>1</option><option value="1.5">1.5</option>
-          <option value="2">2</option>
-        </select>
-      </div>
-    </details>
-    </div>
-
-    <div class="action-bar">
-      <button id="btn-connect" class="btn-primary">Open</button>
-    </div>
-  </div>
-
-  <div id="firmware-config-section" class="section-block section-block-firmware">
-    <div class="section-heading">
-      <span class="section-title">Firmware Program Config</span>
-    </div>
+  <div class="accordion-root">
+  <section id="panel-firmware" class="accordion-panel" data-panel="firmware">
+    <header class="accordion-header" data-accordion="firmware" tabindex="0" role="button" aria-expanded="false">
+      <span class="accordion-chevron codicon codicon-chevron-right" aria-hidden="true"></span>
+      <span class="accordion-title">Firmware Program Config</span>
+    </header>
+    <div id="accordion-body-firmware" class="accordion-body hidden">
     <div class="action-bar firmware-bar">
       <button id="btn-keil-build" class="btn-secondary">Build</button>
       <button id="btn-keil-flash" class="btn-secondary">Flash</button>
+      <button id="btn-custom-run" class="btn-secondary">Custom</button>
       <button id="btn-keil-build-flash" class="btn-primary">Build+Flash</button>
     </div>
     <div class="firmware-summary">
@@ -658,17 +597,30 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider, vscode.D
       </div>
       <div id="firmware-summary-build" class="firmware-summary-line">Build: waiting for summary...</div>
       <div id="firmware-summary-flash" class="firmware-summary-line">Flash: waiting for summary...</div>
+      <div id="firmware-summary-custom" class="firmware-summary-line">Custom: waiting for summary...</div>
       <div id="firmware-summary-hint" class="firmware-summary-hint">Use Configure to start the guided setup.</div>
       <div id="firmware-summary-warnings" class="firmware-summary-warnings hidden"></div>
       <div class="firmware-summary-actions">
-        <button id="btn-keil-config-inline" class="btn-secondary btn-compact" type="button">Configure</button>
-        <button id="btn-keil-check" class="btn-secondary btn-compact" type="button">Run Check</button>
-        <button id="btn-keil-settings" class="btn-secondary btn-compact" type="button">Settings</button>
+        <button id="btn-keil-config-inline" class="btn-firmware-cta" type="button">
+          <span class="codicon codicon-tools" aria-hidden="true"></span>
+          Configure
+        </button>
+        <button id="btn-keil-check" class="btn-firmware-action" type="button">
+          <span class="codicon codicon-check-all" aria-hidden="true"></span>
+          Run Check
+        </button>
+        <button id="btn-keil-settings" class="btn-firmware-action" type="button">
+          <span class="codicon codicon-gear" aria-hidden="true"></span>
+          Settings
+        </button>
       </div>
     </div>
     <div id="firmware-config-drawer" class="firmware-config-drawer hidden">
       <div class="firmware-config-drawer-header">
-        <button id="btn-firmware-drawer-back" class="btn-secondary btn-compact" type="button">Back</button>
+        <button id="btn-firmware-drawer-back" class="btn-firmware-back" type="button">
+          <span class="codicon codicon-chevron-left" aria-hidden="true"></span>
+          Back
+        </button>
         <div class="firmware-config-drawer-heading">
           <span class="firmware-config-drawer-eyebrow">Firmware Config</span>
           <span id="firmware-drawer-route-title" class="firmware-config-drawer-title">Home</span>
@@ -690,6 +642,53 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider, vscode.D
             <span class="firmware-route-card-title">Flash Essentials</span>
             <span class="firmware-route-card-text">F7 action, flasher choice, backend details.</span>
           </button>
+          <button class="firmware-route-card" type="button" data-firmware-route="custom">
+            <span class="firmware-route-card-title">Custom Command</span>
+            <span class="firmware-route-card-text">Python script, or paste a command / choose an executable.</span>
+          </button>
+        </div>
+        <div class="firmware-config-actions">
+          <button class="btn-secondary btn-compact" type="button" data-firmware-action="runConfigCheck" data-keil-busy-lock="true">Run Check</button>
+          <button class="btn-secondary btn-compact" type="button" data-firmware-action="openAdvancedSettings">Settings</button>
+        </div>
+      </div>
+
+      <div id="firmware-route-custom" class="firmware-config-route hidden">
+        <div class="firmware-config-list">
+          <div class="firmware-config-item">
+            <div class="firmware-config-item-copy">
+              <div class="firmware-config-item-title">Mode</div>
+              <div id="fw-custom-mode" class="firmware-config-item-text">Choose Python Script or Command.</div>
+            </div>
+            <button class="btn-secondary btn-compact" type="button" data-firmware-action="pickCustomMode" data-keil-busy-lock="true">Choose Mode</button>
+          </div>
+          <div class="firmware-config-item custom-python-only">
+            <div class="firmware-config-item-copy">
+              <div class="firmware-config-item-title">Python Interpreter</div>
+              <div id="fw-custom-python" class="firmware-config-item-text">Choose python.exe from a uv venv, venv, or system Python.</div>
+            </div>
+            <button class="btn-secondary btn-compact" type="button" data-firmware-action="pickCustomPython" data-keil-busy-lock="true">Choose Python</button>
+          </div>
+          <div class="firmware-config-item custom-python-only">
+            <div class="firmware-config-item-copy">
+              <div class="firmware-config-item-title">Python Script</div>
+              <div id="fw-custom-script" class="firmware-config-item-text">Choose the .py file to run.</div>
+            </div>
+            <button class="btn-secondary btn-compact" type="button" data-firmware-action="pickCustomScript" data-keil-busy-lock="true">Choose Script</button>
+          </div>
+          <div class="firmware-config-item custom-command-only hidden">
+            <div class="firmware-config-item-copy">
+              <div class="firmware-config-item-title">Command</div>
+              <div id="fw-custom-command" class="firmware-config-item-text">Paste a command line, or choose an executable and add arguments.</div>
+            </div>
+            <button class="btn-secondary btn-compact" type="button" data-firmware-action="pickCustomCommand" data-keil-busy-lock="true">Edit Command</button>
+          </div>
+          <div class="firmware-config-item">
+            <div class="firmware-config-item-copy">
+              <div class="firmware-config-item-title">Preview</div>
+              <div id="fw-custom-preview" class="firmware-config-item-text">Choose a mode to preview the custom action.</div>
+            </div>
+          </div>
         </div>
         <div class="firmware-config-actions">
           <button class="btn-secondary btn-compact" type="button" data-firmware-action="runConfigCheck" data-keil-busy-lock="true">Run Check</button>
@@ -911,11 +910,91 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider, vscode.D
       </div>
     </div>
     <div id="keil-status" class="keil-status">Keil: Idle</div>
-  </div>
+    </div>
+  </section>
 
-  <div class="section-block section-block-log">
-    <div class="section-heading">
-      <span class="section-title">Logs Config</span>
+  <section id="panel-connection" class="accordion-panel" data-panel="connection">
+    <header class="accordion-header" data-accordion="connection" tabindex="0" role="button" aria-expanded="false">
+      <span class="accordion-chevron codicon codicon-chevron-right" aria-hidden="true"></span>
+      <span class="accordion-title">COM Port Config</span>
+    </header>
+    <div id="accordion-body-connection" class="accordion-body hidden">
+    <div id="serial-config-section" class="panel-inner">
+    <div class="config-section">
+    <div class="config-row">
+      <label>Port</label>
+      <div class="config-control">
+        <select id="port-select"><option value="">-- Refresh --</option></select>
+        <button id="btn-refresh" class="icon-btn" title="Refresh Ports">&#x21bb;</button>
+      </div>
+    </div>
+    <div class="config-row">
+      <label>Baud</label>
+      <div class="config-control">
+        <input id="baudrate-input" type="number" list="baudrate-list" value="115200" min="1" />
+        <datalist id="baudrate-list">${baudrateOptions}</datalist>
+      </div>
+    </div>
+    <div class="config-row">
+      <label>Parity</label>
+      <div class="config-control">
+        <select id="parity-select">
+          <option value="none" selected>None</option><option value="even">Even</option>
+          <option value="odd">Odd</option><option value="mark">Mark</option>
+          <option value="space">Space</option>
+        </select>
+      </div>
+    </div>
+    <div id="advanced-config" class="config-section">
+      <div class="config-row">
+        <label>Data</label>
+        <select id="databits-select">
+          <option value="5">5</option><option value="6">6</option>
+          <option value="7">7</option><option value="8" selected>8</option>
+        </select>
+      </div>
+      <div class="config-row">
+        <label>Stop</label>
+        <select id="stopbits-select">
+          <option value="1" selected>1</option><option value="1.5">1.5</option>
+          <option value="2">2</option>
+        </select>
+      </div>
+      <div class="config-row">
+        <label>Flow</label>
+        <select id="flow-control-select" title="Flow control">
+          <option value="none" selected>None</option>
+          <option value="rtscts">RTS/CTS</option>
+          <option value="xon">XON/XOFF</option>
+          <option value="xoff">XOFF only</option>
+        </select>
+      </div>
+    </div>
+    </div>
+
+    <div class="action-bar">
+      <button id="btn-connect" class="btn-primary">Open</button>
+    </div>
+    </div>
+    </div>
+  </section>
+
+  <section id="panel-monitor" class="accordion-panel accordion-panel--monitor is-expanded" data-panel="monitor">
+    <header class="accordion-header" data-accordion="monitor" tabindex="0" role="button" aria-expanded="true">
+      <span class="accordion-chevron codicon codicon-chevron-right is-expanded" aria-hidden="true"></span>
+      <span class="accordion-title">Serial Monitor</span>
+    </header>
+    <div id="accordion-body-monitor" class="accordion-body">
+    <div class="monitor-panel-main">
+    <div class="monitor-status-bar">
+      <span id="status-dot" class="status-indicator status-disconnected"></span>
+      <span id="status-text">Disconnected</span>
+      <span id="monitor-port-chip" class="config-chip hidden"></span>
+      <span id="monitor-baud-chip" class="config-chip hidden"></span>
+      <span class="spacer"></span>
+      <span id="rx-count" class="counter" title="Received bytes">RX: 0</span>
+      <span id="tx-count" class="counter" title="Sent bytes">TX: 0</span>
+      <button id="btn-monitor-connect" class="status-action-btn status-action-primary" type="button" title="Toggle serial connection">Open</button>
     </div>
 
     <div class="log-toolbar">
@@ -924,8 +1003,8 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider, vscode.D
       <button id="btn-copy-log" class="btn-secondary btn-compact" type="button">Copy</button>
       <button id="btn-save-log" class="btn-secondary btn-compact" type="button">Save</button>
       <button id="btn-clear" class="btn-secondary btn-icon-compact" type="button" title="Clear logs" aria-label="Clear logs">
-        <svg class="btn-icon-svg" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="currentColor">
-          <path d="M10 12.6l.7.7 1.6-1.6 1.6 1.6.8-.7L13 11l1.7-1.6-.8-.8-1.6 1.7-1.6-1.7-.7.8 1.6 1.6-1.6 1.6zM1 4h14V3H1v1zm0 3h14V6H1v1zm8 2.5V9H1v1h8v-.5zM9 13v-1H1v1h8z"/>
+        <svg class="btn-icon-svg clear-broom" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="currentColor">
+          <path d="M14.854 1.146a.5.5 0 0 0-.707 0L9.476 5.817A3.5 3.5 0 0 0 4.653 6.19l-.684.639-2.675 1.216a.5.5 0 0 0-.285.809l6 6a.5.5 0 0 0 .443.138.5.5 0 0 0 .366-.245l1.212-2.667.686-.686A3.5 3.5 0 0 0 10.184 6.524l4.67-4.67a.5.5 0 0 0 0-.707ZM4.141 7.849l4.01 4.01-.808 1.777L2.364 8.657 4.141 7.849Zm4.609 3.194L4.969 7.263l.372-.347.012-.012A2.5 2.5 0 0 1 9.146 6.854a2.5 2.5 0 0 1-1.793 4.189h-.003Z"/>
         </svg>
       </button>
     </div>
@@ -947,11 +1026,7 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider, vscode.D
         <input type="checkbox" id="opt-auto-scroll" checked />
         <span>Auto Scroll</span>
       </label>
-      <div class="options-actions">
-        <button id="btn-log-focus-mode" class="status-action-btn options-action-btn" type="button" title="Toggle focus mode">Focus</button>
-      </div>
     </div>
-  </div>
 
   <div class="content-wrapper">
     <div class="log-section">
@@ -982,7 +1057,16 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider, vscode.D
       <div class="send-options-row">
         <label class="option-item" title="Send data as HEX bytes">
           <input type="checkbox" id="opt-hex-send" />
-          <span>HEX Send</span>
+          <span>Hex</span>
+        </label>
+        <label class="option-item send-ending-option" title="Line ending for send">
+          <span>End</span>
+          <select id="line-ending-select">
+            <option value="none" selected>None</option>
+            <option value="lf">LF</option>
+            <option value="crlf">CRLF</option>
+            <option value="cr">CR</option>
+          </select>
         </label>
         <div class="history-dropdown" id="history-dropdown">
           <button class="history-toggle" id="history-toggle" type="button">-- History --</button>
@@ -994,6 +1078,9 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider, vscode.D
         <textarea id="send-input" rows="3" placeholder="Send data... (Ctrl+Enter to send)" disabled></textarea>
       </div>
     </div>
+    </div>
+    </div>
+  </section>
   </div>
 
   <script nonce="${nonce}" src="${scriptUri}"></script>

@@ -12,7 +12,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import * as http from 'http';
 import { BridgeServer } from '../packages/serialagent-vscode/src/bridge-server';
 import { MockSerialManager } from './mocks/mock-serial-manager';
-import { ILogger, IKeilApi, KeilConfigCheckResult, KeilTaskResult } from '../packages/serialagent-vscode/src/types';
+import { CustomCommandTaskResult, ILogger, IKeilApi, KeilConfigCheckResult, KeilTaskResult } from '../packages/serialagent-vscode/src/types';
 
 // ---- 测试工具 ----
 
@@ -28,6 +28,13 @@ class FakeKeilApi implements IKeilApi {
   buildError: Error | null = null;
   flashError: Error | null = null;
   buildAndFlashError: Error | null = null;
+  customError: Error | null = null;
+  customResult: CustomCommandTaskResult = {
+    success: true,
+    preview: 'python3 tools/flash.py',
+    cwd: 'D:/workspace',
+    exitCode: 0,
+  };
   configReport: KeilConfigCheckResult = {
     ready: true,
     checks: [{ key: 'uv4Path', ok: true, message: 'ok' }],
@@ -61,6 +68,10 @@ class FakeKeilApi implements IKeilApi {
   async buildAndFlash(): Promise<KeilTaskResult> {
     if (this.buildAndFlashError) { throw this.buildAndFlashError; }
     return this.buildResult;
+  }
+  async runCustomCommand(): Promise<CustomCommandTaskResult> {
+    if (this.customError) { throw this.customError; }
+    return this.customResult;
   }
 }
 
@@ -738,6 +749,29 @@ describe('Bridge Server API', () => {
       expect(res.data.data.buildOk).toBe(true);
       expect(res.data.data.flashOk).toBe(true);
       expect(res.data.data.flasher).toBe('jlink');
+    });
+
+    it('Custom command 成功应返回 200 + customOk', async () => {
+      const keilApi = new FakeKeilApi();
+      bridge.setKeilApi(keilApi);
+
+      const res = await authRequest('POST', '/api/custom/run');
+      expect(res.status).toBe(200);
+      expect(res.data.success).toBe(true);
+      expect(res.data.data.stage).toBe('custom');
+      expect(res.data.data.customOk).toBe(true);
+      expect(res.data.data.preview).toBe('python3 tools/flash.py');
+    });
+
+    it('Custom command 失败应返回 CUSTOM_COMMAND_FAILED', async () => {
+      const keilApi = new FakeKeilApi();
+      keilApi.customError = new Error('Custom command failed with exit code 7');
+      bridge.setKeilApi(keilApi);
+
+      const res = await authRequest('POST', '/api/custom/run');
+      expect(res.status).toBe(500);
+      expect(res.data.success).toBe(false);
+      expect(res.data.error.code).toBe('CUSTOM_COMMAND_FAILED');
     });
   });
 });
