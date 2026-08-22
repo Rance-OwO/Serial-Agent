@@ -124,12 +124,16 @@ export class SerialManager implements SerialRuntime {
           return;
         }
 
+        const flowControl = config.flowControl ?? 'none';
         this._port = new serialPort({
           path: config.port,
           baudRate: config.baudRate,
           dataBits: config.dataBits,
           stopBits: config.stopBits,
           parity: config.parity,
+          rtscts: flowControl === 'rtscts',
+          xon: flowControl === 'xon',
+          xoff: flowControl === 'xoff',
           autoOpen: false,
         });
 

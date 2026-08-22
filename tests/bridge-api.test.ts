@@ -283,6 +283,15 @@ describe('Bridge Server API', () => {
       expect(res.data.error.message).toContain('parity');
     });
 
+    it('无效 flowControl 应返回 400', async () => {
+      mock.setMockPorts([{ path: 'COM3' }]);
+      const res = await authRequest('POST', '/api/connect', { port: 'COM3', flowControl: 'bad-flow' });
+      expect(res.status).toBe(400);
+      expect(res.data.success).toBe(false);
+      expect(res.data.error.code).toBe('INVALID_ARGUMENT');
+      expect(res.data.error.message).toContain('flowControl');
+    });
+
     it('T-B07: 已连接时再连接应先断开旧连接', async () => {
       mock.setMockPorts([{ path: 'COM3' }, { path: 'COM5' }]);
       await authRequest('POST', '/api/connect', { port: 'COM3' });

@@ -369,11 +369,17 @@ export class BridgeServer {
       this._jsonError(res, 400, 'INVALID_ARGUMENT', 'Invalid stopBits: must be one of 1/1.5/2', { field: 'stopBits' });
       return;
     }
+    const flowControlRaw = body.flowControl;
+    if (flowControlRaw !== undefined && flowControlRaw !== 'none' && flowControlRaw !== 'rtscts' && flowControlRaw !== 'xon' && flowControlRaw !== 'xoff') {
+      this._jsonError(res, 400, 'INVALID_ARGUMENT', 'Invalid flowControl: must be one of none/rtscts/xon/xoff', { field: 'flowControl' });
+      return;
+    }
 
     const baudRate = typeof baudRateRaw === 'number' ? baudRateRaw : 115200;
     const dataBits: 5 | 6 | 7 | 8 = dataBitsRaw === 5 || dataBitsRaw === 6 || dataBitsRaw === 7 || dataBitsRaw === 8 ? dataBitsRaw : 8;
     const parity: SerialConfig['parity'] = parityRaw === 'none' || parityRaw === 'even' || parityRaw === 'odd' || parityRaw === 'mark' || parityRaw === 'space' ? parityRaw : 'none';
     const stopBits: 1 | 1.5 | 2 = stopBitsRaw === 1 || stopBitsRaw === 1.5 || stopBitsRaw === 2 ? stopBitsRaw : 1;
+    const flowControl: SerialConfig['flowControl'] = flowControlRaw === 'rtscts' || flowControlRaw === 'xon' || flowControlRaw === 'xoff' ? flowControlRaw : 'none';
 
     const config: SerialConfig = {
       port: body.port,
@@ -381,6 +387,7 @@ export class BridgeServer {
       dataBits,
       parity,
       stopBits,
+      flowControl,
       // 保留当前显示设置
       lineEnding: this._serialManager.config.lineEnding,
       showTimestamp: this._serialManager.config.showTimestamp,

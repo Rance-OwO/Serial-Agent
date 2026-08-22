@@ -23,6 +23,8 @@ export interface PortInfo {
   driverLabel?: string;
 }
 
+export type SerialFlowControl = 'none' | 'rtscts' | 'xon' | 'xoff';
+
 /** 串口完整配置（连接参数 + 显示选项） */
 export interface SerialConfig {
   port: string;
@@ -30,6 +32,7 @@ export interface SerialConfig {
   dataBits: 5 | 6 | 7 | 8;
   parity: 'none' | 'even' | 'odd' | 'mark' | 'space';
   stopBits: 1 | 1.5 | 2;
+  flowControl: SerialFlowControl;
   lineEnding: 'none' | 'lf' | 'crlf' | 'cr';
   showTimestamp: boolean;
   hexMode: boolean;
@@ -41,6 +44,7 @@ export const DEFAULT_CONFIG: SerialConfig = {
   dataBits: 8,
   parity: 'none',
   stopBits: 1,
+  flowControl: 'none',
   lineEnding: 'none',
   showTimestamp: false,
   hexMode: false,
