@@ -54,6 +54,8 @@
   const flowControlSelect = /** @type {HTMLSelectElement} */ (document.getElementById('flow-control-select'));
   /** @type {HTMLSelectElement | null} */
   const lineEndingSelect = /** @type {HTMLSelectElement} */ (document.getElementById('line-ending-select'));
+  /** @type {HTMLSelectElement | null} */
+  const encodingSelect = /** @type {HTMLSelectElement} */ (document.getElementById('encoding-select'));
 
   const refreshBtn = document.getElementById('btn-refresh');
   const connectBtn = document.getElementById('btn-connect');
@@ -228,6 +230,9 @@
     });
     lineEndingSelect?.addEventListener('change', () => {
       vscode.postMessage({ type: 'updateSettings', lineEnding: lineEndingSelect.value });
+    });
+    encodingSelect?.addEventListener('change', () => {
+      vscode.postMessage({ type: 'updateSettings', encoding: encodingSelect.value });
     });
 
     [
@@ -977,11 +982,12 @@
       lineEnding: lineEndingSelect?.value || 'none',
       showTimestamp: !!optTimestamp?.checked,
       hexMode: !!optHex?.checked,
+      encoding: encodingSelect?.value || 'utf8',
     };
   }
 
   /**
-   * @param {{ port: string; baudRate: number; dataBits: number; parity: string; stopBits: number; flowControl?: string; lineEnding: string; showTimestamp: boolean; hexMode: boolean }} config
+   * @param {{ port: string; baudRate: number; dataBits: number; parity: string; stopBits: number; flowControl?: string; lineEnding: string; showTimestamp: boolean; hexMode: boolean; encoding?: string }} config
    */
   function applyConfigToInputs(config) {
     if (portSelect) { portSelect.value = config.port || ''; }
@@ -993,6 +999,7 @@
     if (lineEndingSelect) { lineEndingSelect.value = config.lineEnding || 'none'; }
     if (optTimestamp) { optTimestamp.checked = !!config.showTimestamp; }
     if (optHex) { optHex.checked = !!config.hexMode; }
+    if (encodingSelect) { encodingSelect.value = config.encoding === 'gbk' ? 'gbk' : 'utf8'; }
     updateMonitorConfigChips();
   }
 

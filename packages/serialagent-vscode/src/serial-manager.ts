@@ -1,5 +1,6 @@
 import { execFile } from 'child_process';
 import { ListPortsOptions, PortInfo, SerialConfig, DEFAULT_CONFIG, ISerialManager } from './types';
+import { decodeSerialText, encodeSerialText } from './text-codec';
 
 type SerialPortClass = import('serialport').SerialPort;
 type SerialPortStatic = typeof import('serialport').SerialPort;
@@ -212,7 +213,7 @@ export class SerialManager implements SerialRuntime {
       const trimmed = data.replace(/\r?\n/g, '');
       if (!trimmed.length) { return false; }
       const suffixes: Record<string, string> = { lf: '\n', crlf: '\r\n', cr: '\r', none: '' };
-      buffer = Buffer.from(data + (suffixes[lineEnding] ?? '\n'), 'utf8');
+      buffer = encodeSerialText(data + (suffixes[lineEnding] ?? '\n'), this._config.encoding);
     }
 
     return new Promise<boolean>((resolve) => {
@@ -231,7 +232,7 @@ export class SerialManager implements SerialRuntime {
 
   updateSettings(partial: Partial<SerialConfig>): void {
     if (partial.hexMode === true && !this._config.hexMode && this._rxBuffer.length > 0) {
-      const remaining = this._rxBuffer.toString('utf8');
+      const remaining = decodeSerialText(this._rxBuffer, this._config.encoding);
       if (remaining.length > 0) {
         this._logBuffer.push(remaining);
         this._onLog?.(remaining + '\n');
@@ -298,7 +299,7 @@ export class SerialManager implements SerialRuntime {
 
     this._rxBuffer = Buffer.concat([this._rxBuffer, chunk]);
     if (this._rxBuffer.length > MAX_RX_BUFFER) {
-      const overflow = this._rxBuffer.toString('utf8');
+      const overflow = decodeSerialText(this._rxBuffer, this._config.encoding);
       this._appendLogLine(`[WARN] RX buffer overflow (${MAX_RX_BUFFER} bytes), force flushing`);
       this._appendLogLine(overflow);
       this._rxBuffer = Buffer.alloc(0);
@@ -309,7 +310,7 @@ export class SerialManager implements SerialRuntime {
       const lineBytes = this._rxBuffer.subarray(0, idx);
       this._rxBuffer = this._rxBuffer.subarray(idx + 1);
 
-      let text = lineBytes.toString('utf8');
+      let text = decodeSerialText(lineBytes, this._config.encoding);
       if (text.endsWith('\r')) { text = text.slice(0, -1); }
 
       if (this._config.showTimestamp) {

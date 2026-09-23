@@ -180,7 +180,8 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider, vscode.D
   }
 
   private _loadConfig(): SerialConfig {
-    return this._context.globalState.get<SerialConfig>('serialConfig', { ...DEFAULT_CONFIG });
+    const saved = this._context.globalState.get<Partial<SerialConfig>>('serialConfig', {});
+    return { ...DEFAULT_CONFIG, ...saved };
   }
 
   private _saveSendHistory(history: string[]): void {
@@ -388,6 +389,7 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider, vscode.D
             lineEnding: currentCfg.lineEnding,
             showTimestamp: currentCfg.showTimestamp,
             hexMode: currentCfg.hexMode,
+            encoding: currentCfg.encoding,
           };
           this._saveConfig(config);
           await this._serialManager.connect(config);
@@ -418,6 +420,7 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider, vscode.D
           if (data.showTimestamp !== undefined) { partial.showTimestamp = data.showTimestamp; }
           if (data.hexMode !== undefined) { partial.hexMode = data.hexMode; }
           if (data.lineEnding !== undefined) { partial.lineEnding = data.lineEnding; }
+          if (data.encoding !== undefined) { partial.encoding = data.encoding === 'gbk' ? 'gbk' : 'utf8'; }
           if (data.flowControl !== undefined) { partial.flowControl = this._normalizeFlowControl(data.flowControl); }
           this._serialManager.updateSettings(partial);
           this._saveConfig(partial);
@@ -1025,6 +1028,13 @@ export class SerialPanelProvider implements vscode.WebviewViewProvider, vscode.D
       <label class="option-item" title="Follow the latest log lines automatically">
         <input type="checkbox" id="opt-auto-scroll" checked />
         <span>Auto Scroll</span>
+      </label>
+      <label class="option-item send-ending-option" title="Text encoding for RX log decode and TX encode">
+        <span>Encoding</span>
+        <select id="encoding-select">
+          <option value="utf8" selected>UTF-8</option>
+          <option value="gbk">GBK</option>
+        </select>
       </label>
     </div>
 
