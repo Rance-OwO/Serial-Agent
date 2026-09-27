@@ -64,6 +64,7 @@ AI IDE / Agent Client
 - 在 VS Code 中直接连接和断开串口设备
 - 在同一视图里查看 RX 日志并发送 TX 命令
 - 支持日志搜索、过滤、清空和 RX/TX 计数
+- RX 日志与 TX 发送支持 `UTF-8` / `GBK` 文本编码切换（适配打印中文的固件）
 - 支持 `Focus Mode`，把界面收敛到更偏 RX/TX 的调试视角
 - 支持在侧边栏使用，也支持通过 `Open Serial Agent` 打开到独立 Tab
 

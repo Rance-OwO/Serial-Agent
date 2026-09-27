@@ -18,6 +18,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { ISerialManager, ILogger, SerialConfig, IKeilApi } from './types';
+import { encodeSerialText } from './text-codec';
 
 export class BridgeServer {
   private _server: http.Server | null = null;
@@ -393,6 +394,7 @@ export class BridgeServer {
       lineEnding: this._serialManager.config.lineEnding,
       showTimestamp: this._serialManager.config.showTimestamp,
       hexMode: this._serialManager.config.hexMode,
+      encoding: this._serialManager.config.encoding,
     };
     const ok = await this._serialManager.connect(config);
     if (ok) {
@@ -585,7 +587,7 @@ export class BridgeServer {
       bytesSent = data.replace(/\s+/g, '').length / 2;
     } else {
       const suffixes: Record<string, string> = { lf: '\n', crlf: '\r\n', cr: '\r', none: '' };
-      bytesSent = Buffer.byteLength(data + (suffixes[lineEnding] ?? '\n'), 'utf8');
+      bytesSent = encodeSerialText(data + (suffixes[lineEnding] ?? '\n'), this._serialManager.config.encoding).length;
     }
     this._serialManager.injectLog(`MCP TX>> ${data}`);
     return { ok: true, bytesSent };

@@ -25,6 +25,9 @@ export interface PortInfo {
 
 export type SerialFlowControl = 'none' | 'rtscts' | 'xon' | 'xoff';
 
+/** 串口文本编码（接收解码与发送编码共用） */
+export type SerialEncoding = 'utf8' | 'gbk';
+
 /** 串口完整配置（连接参数 + 显示选项） */
 export interface SerialConfig {
   port: string;
@@ -36,6 +39,7 @@ export interface SerialConfig {
   lineEnding: 'none' | 'lf' | 'crlf' | 'cr';
   showTimestamp: boolean;
   hexMode: boolean;
+  encoding: SerialEncoding;
 }
 
 export const DEFAULT_CONFIG: SerialConfig = {
@@ -48,6 +52,7 @@ export const DEFAULT_CONFIG: SerialConfig = {
   lineEnding: 'none',
   showTimestamp: false,
   hexMode: false,
+  encoding: 'utf8',
 };
 
 /**
